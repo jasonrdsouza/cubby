@@ -21,10 +21,6 @@ const (
 	DEFAULT_ADDR string = "http://localhost:8080"
 )
 
-// Todo
-// - better bucket support (with default bucket)
-// - integration of other BoltDB functionality
-// - content type support (via headers, stored in a "metadata" bucket or key?)
 func main() {
 	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
 	servePort := serveCmd.Int("port", 8080, "port to serve on")
