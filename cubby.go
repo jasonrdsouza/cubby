@@ -260,8 +260,8 @@ func (c *CubbyServer) Remove(key string) error {
 }
 
 func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "" {
-		fmt.Fprintf(w, "Specify key")
+	if r.URL.Path == "" || r.URL.Path == "/" {
+		http.Redirect(w, r, "index.html", 301)
 		return
 	}
 
