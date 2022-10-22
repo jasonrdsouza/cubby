@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/gob"
 	"flag"
 	"fmt"
 	"io"
@@ -165,9 +166,14 @@ func (c *CubbyClient) Remove(key string) error {
 	return err
 }
 
+type CubbyMetadata struct {
+	ContentType string
+}
+
 type CubbyServer struct {
 	filename      string
-	bucket        string
+	dataBucket    string
+	metaBucket    string
 	db            *bolt.DB
 	maxObjectSize int64
 	log           *log.Logger
@@ -176,7 +182,8 @@ type CubbyServer struct {
 func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error) {
 	server := &CubbyServer{
 		filename:      dbFilename,
-		bucket:        DB_BUCKET,
+		dataBucket:    DB_BUCKET,
+		metaBucket:    DB_BUCKET + "_metadata",
 		maxObjectSize: int64(maxObjectSizeMB * 1024 * 1024),
 		log:           log.Default(),
 	}
@@ -200,9 +207,14 @@ func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error
 
 func (c *CubbyServer) initialize() error {
 	return c.db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists([]byte(c.bucket))
+		_, err := tx.CreateBucketIfNotExists([]byte(c.dataBucket))
 		if err != nil {
-			return fmt.Errorf("DB create bucket: %s", err)
+			return fmt.Errorf("DB create data bucket: %s", err)
+		}
+
+		_, err = tx.CreateBucketIfNotExists([]byte(c.metaBucket))
+		if err != nil {
+			return fmt.Errorf("DB create meta bucket: %s", err)
 		}
 		return nil
 	})
@@ -213,15 +225,26 @@ func (c *CubbyServer) Close() {
 	c.db.Close()
 }
 
-func (c *CubbyServer) Get(key string) string {
+func (c *CubbyServer) GetMetadata(key string, tx *bolt.Tx) *CubbyMetadata {
+	b := tx.Bucket([]byte(c.metaBucket))
+	v := b.Get([]byte(key))
+
+	decoder := gob.NewDecoder(bytes.NewBuffer(v))
+	var metadata CubbyMetadata
+	err := decoder.Decode(&metadata)
+	if err != nil {
+		c.log.Printf("Error decoding metadata for key: %v. %v", key, err)
+	}
+
+	// In either case, return the metadata struct. Either it will be empty, or
+	// it will contain the requested metadata
+	return &metadata
+}
+
+func (c *CubbyServer) GetAtomic(key string) string {
 	var value []byte
 	c.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(c.bucket))
-		v := b.Get([]byte(key))
-
-		// v is only valid for the duration of the transaction, so copy the value
-		// to a new byte array for use later on
-		value = append(value, v...)
+		value = c.Get(key, tx)
 		return nil
 	})
 
@@ -229,11 +252,40 @@ func (c *CubbyServer) Get(key string) string {
 	return string(value)
 }
 
-func (c *CubbyServer) Put(key, value string) error {
-	err := c.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(c.bucket))
-		err := b.Put([]byte(key), []byte(value))
+func (c *CubbyServer) Get(key string, tx *bolt.Tx) []byte {
+	b := tx.Bucket([]byte(c.dataBucket))
+	v := b.Get([]byte(key))
+
+	// v is only valid for the duration of the transaction, so copy the value
+	// to a new byte array for use later on
+	var value []byte
+	value = append(value, v...)
+	return value
+}
+
+func (c *CubbyServer) PutMetadata(key string, metadata *CubbyMetadata, tx *bolt.Tx) error {
+	b := tx.Bucket([]byte(c.metaBucket))
+
+	var buf bytes.Buffer
+	encoder := gob.NewEncoder(&buf)
+	err := encoder.Encode(metadata)
+	if err != nil {
+		c.log.Printf("Error encoding metadata for key: %s", key)
 		return err
+	}
+
+	err = b.Put([]byte(key), buf.Bytes())
+	if err != nil {
+		c.log.Printf("Error putting metadata for key: %s", key)
+	} else {
+		c.log.Printf("Successfully put metadata for key: %s", key)
+	}
+	return err
+}
+
+func (c *CubbyServer) PutAtomic(key, value string) error {
+	err := c.db.Update(func(tx *bolt.Tx) error {
+		return c.Put(key, []byte(value), tx)
 	})
 
 	if err != nil {
@@ -244,11 +296,26 @@ func (c *CubbyServer) Put(key, value string) error {
 	return err
 }
 
-func (c *CubbyServer) Remove(key string) error {
+func (c *CubbyServer) Put(key string, value []byte, tx *bolt.Tx) error {
+	b := tx.Bucket([]byte(c.dataBucket))
+	err := b.Put([]byte(key), value)
+	return err
+}
+
+func (c *CubbyServer) RemoveMetadata(key string, tx *bolt.Tx) error {
+	b := tx.Bucket([]byte(c.metaBucket))
+	err := b.Delete([]byte(key))
+	if err != nil {
+		c.log.Printf("Error removing metadata for key: %s", key)
+	} else {
+		c.log.Printf("Successfully removed metadata for key: %s", key)
+	}
+	return err
+}
+
+func (c *CubbyServer) RemoveAtomic(key string) error {
 	err := c.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(c.bucket))
-		err := b.Delete([]byte(key))
-		return err
+		return c.Remove(key, tx)
 	})
 
 	if err != nil {
@@ -256,6 +323,12 @@ func (c *CubbyServer) Remove(key string) error {
 	} else {
 		c.log.Printf("Successfully removed key: %s", key)
 	}
+	return err
+}
+
+func (c *CubbyServer) Remove(key string, tx *bolt.Tx) error {
+	b := tx.Bucket([]byte(c.dataBucket))
+	err := b.Delete([]byte(key))
 	return err
 }
 
@@ -268,7 +341,12 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	key := r.URL.Path[1:]
 
 	if r.Method == http.MethodGet {
-		fmt.Fprint(w, c.Get(key))
+		c.db.View(func(tx *bolt.Tx) error {
+			metadata := c.GetMetadata(key, tx)
+			w.Header().Set("Content-Type", metadata.ContentType)
+			w.Write(c.Get(key, tx))
+			return nil
+		})
 	} else if r.Method == http.MethodPost {
 		var b bytes.Buffer
 		r.Body = http.MaxBytesReader(w, r.Body, c.maxObjectSize)
@@ -278,14 +356,28 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		err = c.Put(key, b.String())
+		err = c.db.Update(func(tx *bolt.Tx) error {
+			err := c.Put(key, b.Bytes(), tx)
+			if err != nil {
+				return err
+			}
+
+			metadata := CubbyMetadata{ContentType: r.Header.Get("Content-Type")}
+			return c.PutMetadata(key, &metadata, tx)
+		})
 		if err != nil {
 			http.Error(w, "Could not persist data", http.StatusInternalServerError)
 			return
 		}
-
 	} else if r.Method == http.MethodDelete {
-		err := c.Remove(key)
+		err := c.db.Update(func(tx *bolt.Tx) error {
+			err := c.Remove(key, tx)
+			if err != nil {
+				return err
+			}
+			return c.RemoveMetadata(key, tx)
+		})
+
 		if err != nil {
 			http.NotFound(w, r)
 			return

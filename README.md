@@ -4,7 +4,7 @@ A simple, web-native object store.
 ### Building
 For current system:
 ```bash
-go build -o bin/cubby
+go fmt && goimports -w . && and go build -o bin/cubby
 ```
 
 For alternate platforms (ie. linux):
@@ -17,7 +17,7 @@ Build binaries, then tag and push the release. Out of band, upload the newly gen
 ```bash
 export CUBBY_VERSION=0.2
 
-go build -o bin/cubby-darwin && GOOS=linux GOARCH=amd64 go build -o bin/cubby-linux && git tag v$CUBBY_VERSION && git push origin v$CUBBY_VERSION
+go fmt && goimports -w . && go build -o bin/cubby-darwin && GOOS=linux GOARCH=amd64 go build -o bin/cubby-linux && git tag v$CUBBY_VERSION && git push origin v$CUBBY_VERSION
 ```
 
 ### Deploying
