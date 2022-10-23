@@ -170,6 +170,10 @@ type CubbyMetadata struct {
 	ContentType string
 }
 
+func (m *CubbyMetadata) Empty() bool {
+	return *m == CubbyMetadata{}
+}
+
 type CubbyServer struct {
 	filename      string
 	dataBucket    string
@@ -343,8 +347,14 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		c.db.View(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
-			w.Header().Set("Content-Type", metadata.ContentType)
-			w.Write(c.Get(key, tx))
+			data := c.Get(key, tx)
+
+			if len(data) == 0 && metadata.Empty() {
+				http.NotFound(w, r)
+			} else {
+				w.Header().Set("Content-Type", metadata.ContentType)
+				w.Write(data)
+			}
 			return nil
 		})
 	} else if r.Method == http.MethodPost {

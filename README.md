@@ -31,6 +31,27 @@ chmod +x /usr/local/bin/cubby
 sudo systemctl restart cubby
 ```
 
+### Usage
+Run the server:
+```bash
+./bin/cubby-darwin serve -path data/cubby.db
+```
+
+Get data (using [httpie](https://httpie.io/))
+```bash
+http GET localhost:8080/test
+```
+
+Put JSON data
+```bash
+http POST http://localhost:8080/test key=value
+```
+
+Put other data types (specifying content type)
+```bash
+http POST http://localhost:8080/pdf Content-Type:application/pdf < ~/Downloads/test.pdf
+```
+
 ### Todo
 https://trello.com/c/A9108x0T
 
