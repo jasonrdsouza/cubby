@@ -168,6 +168,7 @@ func (c *CubbyClient) Remove(key string) error {
 
 type CubbyMetadata struct {
 	ContentType string
+	UpdatedAt   time.Time
 }
 
 func (m *CubbyMetadata) Empty() bool {
@@ -353,6 +354,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				http.NotFound(w, r)
 			} else {
 				w.Header().Set("Content-Type", metadata.ContentType)
+				w.Header().Set("Last-Modified", metadata.UpdatedAt.Format(time.RFC1123))
 				w.Write(data)
 			}
 			return nil
@@ -372,7 +374,10 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 
-			metadata := CubbyMetadata{ContentType: r.Header.Get("Content-Type")}
+			metadata := CubbyMetadata{
+				ContentType: r.Header.Get("Content-Type"),
+				UpdatedAt:   time.Now(),
+			}
 			return c.PutMetadata(key, &metadata, tx)
 		})
 		if err != nil {

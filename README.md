@@ -13,7 +13,7 @@ GOOS=linux GOARCH=amd64 go build -o bin/cubby-linux
 ```
 
 ### Releasing
-Build binaries, then tag and push the release. Out of band, upload the newly generated binaries:
+Build binaries, then tag and push the release. Out of band, make the Github release, and upload the newly generated binaries:
 ```bash
 export CUBBY_VERSION=0.2
 
