@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"flag"
 	"fmt"
+	"html/template"
 	"io"
 	"log"
 	"net/http"
@@ -19,12 +20,12 @@ import (
 
 const (
 	DB_BUCKET    string = "MyBucket"
-	DEFAULT_ADDR string = "http://localhost:8080"
+	DEFAULT_ADDR string = "http://localhost:8383"
 )
 
 func main() {
 	serveCmd := flag.NewFlagSet("serve", flag.ExitOnError)
-	servePort := serveCmd.Int("port", 8080, "port to serve on")
+	servePort := serveCmd.Int("port", 8383, "port to serve on")
 	serveFile := serveCmd.String("path", "cubby.db", "filepath to store cubby data at")
 	serveMaxSize := serveCmd.Int("max", 10, "max cubby object size in MB")
 
@@ -182,6 +183,7 @@ type CubbyServer struct {
 	db            *bolt.DB
 	maxObjectSize int64
 	log           *log.Logger
+	indexTemplate *template.Template
 }
 
 func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error) {
@@ -191,6 +193,7 @@ func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error
 		metaBucket:    DB_BUCKET + "_metadata",
 		maxObjectSize: int64(maxObjectSizeMB * 1024 * 1024),
 		log:           log.Default(),
+		indexTemplate: IndexTemplate(),
 	}
 
 	db, err := bolt.Open(server.filename, 0600, &bolt.Options{Timeout: 1 * time.Second})
@@ -337,9 +340,59 @@ func (c *CubbyServer) Remove(key string, tx *bolt.Tx) error {
 	return err
 }
 
+func (c *CubbyServer) ListAtomic() []string {
+	var keys []string
+	c.db.View(func(tx *bolt.Tx) error {
+		keys = c.List(tx)
+		return nil
+	})
+
+	c.log.Printf("Successfully listed keys")
+	return keys
+}
+
+func (c *CubbyServer) List(tx *bolt.Tx) []string {
+	b := tx.Bucket([]byte(c.dataBucket))
+	cursor := b.Cursor()
+
+	keys := []string{}
+	for k, _ := cursor.First(); k != nil; k, _ = cursor.Next() {
+		keys = append(keys, string(k))
+	}
+
+	return keys
+}
+
+func IndexTemplate() *template.Template {
+	const keyListingTemplate = `
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>Cubby Server</title>
+	</head>
+	<body>
+    <h1>Occupied Cubbies</h1>
+		{{range .}}
+      <ul>
+        <li><a href="{{.}}">{{.}}</a></li>
+      </ul>
+    {{else}}
+      <div><strong>No entries</strong></div>
+    {{end}}
+	</body>
+</html>`
+	return template.Must(template.New("index").Parse(keyListingTemplate))
+}
+
 func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "" || r.URL.Path == "/" {
-		http.Redirect(w, r, "index.html", 301)
+		// index page as list of keys
+		keys := c.ListAtomic()
+		err := c.indexTemplate.Execute(w, keys)
+		if err != nil {
+			http.Error(w, "Unable to generate template", http.StatusInternalServerError)
+		}
 		return
 	}
 
