@@ -1,0 +1,14 @@
+[Unit]
+Description=Cubby server
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=3
+User=jason
+ExecStart=/usr/local/bin/cubby serve -path /var/data/cubby.db -port=8081 -max=200
+
+[Install]
+WantedBy=multi-user.target
+
