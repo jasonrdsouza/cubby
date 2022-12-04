@@ -21,6 +21,12 @@ func IndexTemplate() *template.Template {
     h1,h2,h3{
       line-height:1.2
     }
+    p{
+      text-align: center;
+    }
+    footer{
+      text-align: right;
+    }
     @media (prefers-color-scheme: dark){
       body{
         color:#c9d1d9;
@@ -37,13 +43,17 @@ func IndexTemplate() *template.Template {
   </head>
   <body>
     <h1>Occupied Cubbies</h1>
+
     <ul>
-    {{range .}}
+    {{range .Keys}}
         <li><a href="{{.}}">{{.}}</a></li>
     {{else}}
       <div><strong>No entries</strong></div>
     {{end}}
     </ul>
+
+    <p>-----</p>
+    <footer>Version: <a href="https://github.com/jasonrdsouza/cubby/commit/{{.Version}}">{{ .ShortVersion }}</a></footer>
   </body>
 </html>`
 

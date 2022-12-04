@@ -69,6 +69,10 @@ func (c *CubbyServer) Close() {
 	c.db.Close()
 }
 
+func (c *CubbyServer) Version() string {
+	return BuiltGitCommit
+}
+
 func (c *CubbyServer) GetMetadata(key string, tx *bolt.Tx) *CubbyMetadata {
 	b := tx.Bucket([]byte(c.metaBucket))
 	v := b.Get([]byte(key))
@@ -202,8 +206,17 @@ func (c *CubbyServer) List(tx *bolt.Tx) []string {
 func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "" || r.URL.Path == "/" {
 		// index page shows a list of occupied cubbies (ie. active keys)
-		keys := c.ListAtomic()
-		err := c.indexTemplate.Execute(w, keys)
+		tmplData := struct {
+			Keys         []string
+			Version      string
+			ShortVersion string
+		}{
+			Keys:         c.ListAtomic(),
+			Version:      c.Version(),
+			ShortVersion: c.Version()[:7],
+		}
+
+		err := c.indexTemplate.Execute(w, tmplData)
 		if err != nil {
 			http.Error(w, "Unable to generate template", http.StatusInternalServerError)
 		}
