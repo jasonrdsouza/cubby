@@ -228,6 +228,8 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		c.db.View(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
+      // auth check here
+
 			data := c.Get(key, tx)
 
 			if len(data) == 0 && metadata.Empty() {
@@ -254,6 +256,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 
+      // add auth metadata here
 			metadata := CubbyMetadata{
 				ContentType: r.Header.Get("Content-Type"),
 				UpdatedAt:   time.Now(),
@@ -266,6 +269,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		}
 	} else if r.Method == http.MethodDelete {
 		err := c.db.Update(func(tx *bolt.Tx) error {
+      // auth check before delete
 			err := c.Remove(key, tx)
 			if err != nil {
 				return err
