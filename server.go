@@ -5,17 +5,21 @@ import (
 	"encoding/gob"
 	"fmt"
 	"log"
-	"net/http"
 	"text/template"
 	"time"
 
 	"github.com/boltdb/bolt"
 )
 
+const (
+	DB_BUCKET string = "MyBucket" // todo: change me to avoid data loss for new major version
+)
+
 type CubbyServer struct {
 	filename      string
 	dataBucket    string
 	metaBucket    string
+	usersBucket   string
 	db            *bolt.DB
 	maxObjectSize int64
 	log           *log.Logger
@@ -27,6 +31,7 @@ func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error
 		filename:      dbFilename,
 		dataBucket:    DB_BUCKET,
 		metaBucket:    DB_BUCKET + "_metadata",
+		usersBucket:   USERS_BUCKET,
 		maxObjectSize: int64(maxObjectSizeMB * 1024 * 1024),
 		log:           log.Default(),
 		indexTemplate: IndexTemplate(),
@@ -60,6 +65,12 @@ func (c *CubbyServer) initialize() error {
 		if err != nil {
 			return fmt.Errorf("DB create meta bucket: %s", err)
 		}
+
+		_, err = tx.CreateBucketIfNotExists([]byte(c.usersBucket))
+		if err != nil {
+			return fmt.Errorf("DB create users bucket: %s", err)
+		}
+
 		return nil
 	})
 }
@@ -201,89 +212,4 @@ func (c *CubbyServer) List(tx *bolt.Tx) []string {
 	}
 
 	return keys
-}
-
-func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "" || r.URL.Path == "/" {
-		// index page shows a list of occupied cubbies (ie. active keys)
-		tmplData := struct {
-			Keys         []string
-			Version      string
-			ShortVersion string
-		}{
-			Keys:         c.ListAtomic(),
-			Version:      c.Version(),
-			ShortVersion: c.Version()[:7],
-		}
-
-		err := c.indexTemplate.Execute(w, tmplData)
-		if err != nil {
-			http.Error(w, "Unable to generate template", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	key := r.URL.Path[1:]
-
-	if r.Method == http.MethodGet {
-		c.db.View(func(tx *bolt.Tx) error {
-			metadata := c.GetMetadata(key, tx)
-      // auth check here
-
-			data := c.Get(key, tx)
-
-			if len(data) == 0 && metadata.Empty() {
-				http.NotFound(w, r)
-			} else {
-				w.Header().Set("Content-Type", metadata.ContentType)
-				w.Header().Set("Last-Modified", metadata.UpdatedAt.Format(time.RFC1123))
-				w.Write(data)
-			}
-			return nil
-		})
-	} else if r.Method == http.MethodPost {
-		var b bytes.Buffer
-		r.Body = http.MaxBytesReader(w, r.Body, c.maxObjectSize)
-		_, err := b.ReadFrom(r.Body)
-		if err != nil {
-			http.Error(w, "Could not read data", http.StatusInternalServerError)
-			return
-		}
-
-		err = c.db.Update(func(tx *bolt.Tx) error {
-			err := c.Put(key, b.Bytes(), tx)
-			if err != nil {
-				return err
-			}
-
-      // add auth metadata here
-			metadata := CubbyMetadata{
-				ContentType: r.Header.Get("Content-Type"),
-				UpdatedAt:   time.Now(),
-			}
-			return c.PutMetadata(key, &metadata, tx)
-		})
-		if err != nil {
-			http.Error(w, "Could not persist data", http.StatusInternalServerError)
-			return
-		}
-	} else if r.Method == http.MethodDelete {
-		err := c.db.Update(func(tx *bolt.Tx) error {
-      // auth check before delete
-			err := c.Remove(key, tx)
-			if err != nil {
-				return err
-			}
-			return c.RemoveMetadata(key, tx)
-		})
-
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	} else {
-		fmt.Fprintf(w, "Invalid action for key: %s", key)
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
 }
