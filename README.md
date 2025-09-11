@@ -132,7 +132,7 @@ http -a username:password POST localhost:8383/authTest data=confidential X-CUBBY
 ### Building
 For current system:
 ```bash
-go fmt && goimports -w . && and go build -o bin/cubby
+go fmt && goimports -w . && go vet && go build -o bin/cubby
 ```
 
 For alternate platforms (ie. linux):
@@ -145,7 +145,8 @@ Build binaries, then tag and push the release. Out of band, make the Github rele
 ```bash
 export CUBBY_VERSION=1.0
 
-go fmt && goimports -w . && go build -o bin/cubby-darwin && GOOS=linux GOARCH=amd64 go build -o bin/cubby-linux
+go fmt && go tool goimports -w . && go vet && go build -o bin/cubby-darwin && GOOS=linux GOARCH=amd64 go build -o bin/
+cubby-linux
 
 git tag v$CUBBY_VERSION && git push origin v$CUBBY_VERSION
 ```
