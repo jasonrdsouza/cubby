@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cubby Example - Todo List</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; max-width: 500px; margin: 40px auto; padding: 0 20px; color: #333; }
+    h1 { margin-bottom: 8px; }
+    .subtitle { color: #888; margin-bottom: 24px; font-size: 14px; }
+    .sync-status { font-size: 12px; padding: 4px 8px; border-radius: 4px; background: #e8f5e9; color: #2e7d32; }
+    .sync-status.error { background: #fbe9e7; color: #c62828; }
+    .add-form { display: flex; gap: 8px; margin-bottom: 16px; }
+    .add-form input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    .add-form button { padding: 8px 16px; background: #1976d2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    .add-form button:hover { background: #1565c0; }
+    ul { list-style: none; }
+    li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid #eee; }
+    li label { flex: 1; cursor: pointer; }
+    li.done label { text-decoration: line-through; color: #aaa; }
+    li button { background: none; border: none; color: #c62828; cursor: pointer; font-size: 16px; }
+    li button:hover { color: #b71c1c; }
+    .empty { color: #aaa; font-style: italic; padding: 16px 0; }
+    .config { margin-bottom: 24px; padding: 12px; background: #f5f5f5; border-radius: 4px; font-size: 13px; }
+    .config summary { cursor: pointer; font-weight: 600; }
+    .config label { display: block; margin-top: 8px; }
+    .config input { width: 100%; padding: 4px 8px; margin-top: 2px; border: 1px solid #ddd; border-radius: 3px; }
+    .config button { margin-top: 8px; padding: 4px 12px; font-size: 13px; background: #1976d2; color: white; border: none; border-radius: 3px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div style="display: flex; align-items: center; justify-content: space-between;">
+    <h1>Todo List</h1>
+    <span class="sync-status" id="syncStatus">Local only</span>
+  </div>
+  <p class="subtitle">A simple demo app using Cubby for persistence.</p>
+
+  <details class="config">
+    <summary>Cubby Server Settings (optional)</summary>
+    <label>Server URL <input type="text" id="cfgServer" placeholder="http://localhost:8383"></label>
+    <label>Username <input type="text" id="cfgUser" placeholder="username"></label>
+    <label>Password <input type="password" id="cfgPass" placeholder="password"></label>
+    <button onclick="applyConfig()">Connect</button>
+    <button onclick="disconnectConfig()" style="background: #c62828;">Disconnect</button>
+  </details>
+
+  <form class="add-form" onsubmit="addTodo(event)">
+    <input type="text" id="newTodo" placeholder="What needs to be done?" autocomplete="off">
+    <button type="submit">Add</button>
+  </form>
+
+  <ul id="todoList"></ul>
+
+  <script type="module">
+    import { Cubby } from './cubby-client.js';
+
+    let cubby;
+
+    async function initCubby(serverConfig) {
+      if (cubby) {
+        cubby.destroy();
+      }
+
+      const options = {
+        key: 'example-todos',
+        defaultState: { todos: [] },
+      };
+
+      if (serverConfig) {
+        options.server = serverConfig.server;
+        options.username = serverConfig.username;
+        options.password = serverConfig.password;
+      }
+
+      cubby = new Cubby(options);
+
+      cubby.onSyncError((type, err) => {
+        const el = document.getElementById('syncStatus');
+        el.textContent = 'Sync error';
+        el.className = 'sync-status error';
+        console.error('Sync error [' + type + ']:', err);
+      });
+
+      await cubby.init();
+      render();
+      updateStatus();
+    }
+
+    function updateStatus() {
+      const el = document.getElementById('syncStatus');
+      if (cubby.server) {
+        el.textContent = 'Connected';
+        el.className = 'sync-status';
+      } else {
+        el.textContent = 'Local only';
+        el.className = 'sync-status';
+      }
+    }
+
+    function render() {
+      const state = cubby.getState();
+      const list = document.getElementById('todoList');
+
+      if (state.todos.length === 0) {
+        list.innerHTML = '<li class="empty">No todos yet. Add one above!</li>';
+        return;
+      }
+
+      list.innerHTML = state.todos.map((todo, i) => `
+        <li class="${todo.done ? 'done' : ''}">
+          <input type="checkbox" ${todo.done ? 'checked' : ''} onchange="toggleTodo(${i})">
+          <label onclick="toggleTodo(${i})">${escapeHtml(todo.text)}</label>
+          <button onclick="removeTodo(${i})">&times;</button>
+        </li>
+      `).join('');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Expose functions to global scope for inline handlers
+    window.addTodo = function(e) {
+      e.preventDefault();
+      const input = document.getElementById('newTodo');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const state = cubby.getState();
+      cubby.setState({
+        todos: [...state.todos, { text, done: false }],
+      });
+      input.value = '';
+      render();
+    };
+
+    window.toggleTodo = function(index) {
+      const state = cubby.getState();
+      const todos = state.todos.map((t, i) =>
+        i === index ? { ...t, done: !t.done } : t
+      );
+      cubby.setState({ todos });
+      render();
+    };
+
+    window.removeTodo = function(index) {
+      const state = cubby.getState();
+      const todos = state.todos.filter((_, i) => i !== index);
+      cubby.setState({ todos });
+      render();
+    };
+
+    window.applyConfig = async function() {
+      const server = document.getElementById('cfgServer').value.trim();
+      const username = document.getElementById('cfgUser').value.trim();
+      const password = document.getElementById('cfgPass').value;
+
+      if (!server) {
+        alert('Please enter a server URL.');
+        return;
+      }
+
+      await initCubby({ server, username, password });
+    };
+
+    window.disconnectConfig = function() {
+      if (cubby) {
+        cubby.disconnect();
+      }
+      document.getElementById('cfgServer').value = '';
+      document.getElementById('cfgUser').value = '';
+      document.getElementById('cfgPass').value = '';
+      updateStatus();
+    };
+
+    // Init cubby - will auto-restore server config from localStorage if available
+    initCubby();
+  </script>
+</body>
+</html>

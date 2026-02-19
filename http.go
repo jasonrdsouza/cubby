@@ -11,6 +11,15 @@ import (
 )
 
 func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	if r.URL.Path == "" || r.URL.Path == "/" {
 		log.Println("Serving index page")
 		// index page shows a list of occupied cubbies (ie. active keys)
@@ -28,6 +37,12 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			http.Error(w, "Unable to generate template", http.StatusInternalServerError)
 		}
+		return
+	}
+
+	if r.URL.Path == "/client.js" {
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, clientJS)
 		return
 	}
 
