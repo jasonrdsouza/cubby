@@ -81,7 +81,27 @@
         </div>
         <div>
           <label for="contentType">Content Type:</label>
-          <input type="text" id="contentType" name="contentType" placeholder="e.g. text/plain, application/json">
+          <input type="text" id="contentType" name="contentType" list="contentTypes" placeholder="e.g. text/plain, application/json">
+          <datalist id="contentTypes">
+            <option value="text/plain">
+            <option value="text/html">
+            <option value="text/css">
+            <option value="text/csv">
+            <option value="text/markdown">
+            <option value="application/json">
+            <option value="application/javascript">
+            <option value="application/pdf">
+            <option value="application/xml">
+            <option value="application/zip">
+            <option value="application/octet-stream">
+            <option value="image/png">
+            <option value="image/jpeg">
+            <option value="image/gif">
+            <option value="image/svg+xml">
+            <option value="image/webp">
+            <option value="audio/mpeg">
+            <option value="video/mp4">
+          </datalist>
         </div>
         <div>
           <label><input type="radio" name="uploadType" value="file" checked> Upload File</label>
