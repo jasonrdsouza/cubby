@@ -15,6 +15,15 @@ var clientJS string
 //go:embed viewer.html
 var viewerFile string
 
+//go:embed static/marked.min.js
+var markedJS string
+
+//go:embed static/highlight.min.js
+var highlightJS string
+
+//go:embed static/rainbow.min.css
+var rainbowCSS string
+
 func IndexTemplate() *template.Template {
 	indexTemplate, err := template.New("index").Parse(indexFile)
 	if err != nil {

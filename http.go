@@ -48,6 +48,24 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/vendor/marked.min.js" {
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, markedJS)
+		return
+	}
+
+	if r.URL.Path == "/vendor/highlight.min.js" {
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, highlightJS)
+		return
+	}
+
+	if r.URL.Path == "/vendor/rainbow.min.css" {
+		w.Header().Set("Content-Type", "text/css")
+		fmt.Fprint(w, rainbowCSS)
+		return
+	}
+
 	key := r.URL.Path[1:]
 	username, password, ok := r.BasicAuth()
 	if !ok {
