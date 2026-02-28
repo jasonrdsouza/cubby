@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
+	htmltemplate "html/template"
 	"log"
 	"text/template"
 	"time"
@@ -16,25 +17,27 @@ const (
 )
 
 type CubbyServer struct {
-	filename      string
-	dataBucket    string
-	metaBucket    string
-	usersBucket   string
-	db            *bolt.DB
-	maxObjectSize int64
-	log           *log.Logger
-	indexTemplate *template.Template
+	filename       string
+	dataBucket     string
+	metaBucket     string
+	usersBucket    string
+	db             *bolt.DB
+	maxObjectSize  int64
+	log            *log.Logger
+	indexTemplate  *template.Template
+	viewerTemplate *htmltemplate.Template
 }
 
 func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error) {
 	server := &CubbyServer{
-		filename:      dbFilename,
-		dataBucket:    DB_BUCKET,
-		metaBucket:    DB_BUCKET + "_metadata",
-		usersBucket:   USERS_BUCKET,
-		maxObjectSize: int64(maxObjectSizeMB * 1024 * 1024),
-		log:           log.Default(),
-		indexTemplate: IndexTemplate(),
+		filename:       dbFilename,
+		dataBucket:     DB_BUCKET,
+		metaBucket:     DB_BUCKET + "_metadata",
+		usersBucket:    USERS_BUCKET,
+		maxObjectSize:  int64(maxObjectSizeMB * 1024 * 1024),
+		log:            log.Default(),
+		indexTemplate:  IndexTemplate(),
+		viewerTemplate: ViewerTemplate(),
 	}
 
 	db, err := bolt.Open(server.filename, 0600, &bolt.Options{Timeout: 1 * time.Second})

@@ -132,7 +132,7 @@ http -a username:password POST localhost:8383/authTest data=confidential X-CUBBY
 ### Building
 For current system:
 ```bash
-go fmt && goimports -w . && go vet && go build -o bin/cubby
+go fmt && go tool goimports -w . && go vet && go build -o bin/cubby
 ```
 
 For alternate platforms (ie. linux):

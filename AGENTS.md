@@ -12,7 +12,7 @@ Cubby is a simple, web-native object store written in Go. It provides a REST API
 
 Build for current platform:
 ```bash
-go fmt && goimports -w . && go vet && go build -o bin/cubby
+go fmt && go tool goimports -w . && go vet && go build -o bin/cubby
 ```
 
 Build for Linux (cross-compile):

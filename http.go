@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -73,6 +75,8 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			if len(data) == 0 && metadata.Empty() {
 				log.Printf("Key %s not found", key)
 				http.NotFound(w, r)
+			} else if _, raw := r.URL.Query()["raw"]; !raw && acceptsHTML(r) && hasTheme(metadata.ContentType) {
+				c.serveThemedView(w, key, metadata, data)
 			} else {
 				w.Header().Set("Content-Type", metadata.ContentType)
 				w.Header().Set("Last-Modified", metadata.UpdatedAt.Format(time.RFC1123))
@@ -161,5 +165,38 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Invalid action for key: %s", key)
 		fmt.Fprintf(w, "Invalid action for key: %s", key)
 		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (c *CubbyServer) serveThemedView(w http.ResponseWriter, key string, metadata *CubbyMetadata, data []byte) {
+	ct := strings.SplitN(metadata.ContentType, ";", 2)[0]
+	isImage := strings.HasPrefix(strings.TrimSpace(ct), "image/")
+
+	tmplData := struct {
+		Key           string
+		ContentType   string
+		ContentBase64 string
+		IsImage       bool
+		UpdatedAt     string
+		Version       string
+		ShortVersion  string
+	}{
+		Key:          key,
+		ContentType:  metadata.ContentType,
+		IsImage:      isImage,
+		UpdatedAt:    metadata.UpdatedAt.Format(time.RFC1123),
+		Version:      c.Version(),
+		ShortVersion: c.Version()[:7],
+	}
+
+	if !isImage {
+		tmplData.ContentBase64 = base64.StdEncoding.EncodeToString(data)
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	err := c.viewerTemplate.Execute(w, tmplData)
+	if err != nil {
+		log.Printf("Error executing viewer template: %v", err)
+		http.Error(w, "Unable to render view", http.StatusInternalServerError)
 	}
 }
