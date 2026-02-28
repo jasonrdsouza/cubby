@@ -25,7 +25,7 @@ func hasTheme(contentType string) bool {
 	ct = strings.TrimSpace(ct)
 
 	switch ct {
-	case "text/cubbydoc", "text/markdown", "text/plain", "text/csv", "text/x-diff",
+	case "text/cubbydoc", "text/markdown", "text/plain", "text/csv", "text/x-diff", "text/x-mermaid",
 		"text/x-python", "text/x-go", "text/x-rust",
 		"text/x-java", "text/x-c", "text/x-c++",
 		"text/x-ruby", "text/x-shellscript", "text/x-sql",

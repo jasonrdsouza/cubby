@@ -82,6 +82,13 @@
     #content th{
       background:#161b22
     }
+    #content .d2h-diff-table th,
+    #content .d2h-diff-table td{
+      border:initial;
+      padding:initial;
+      text-align:initial;
+      background:initial
+    }
     #content img{
       max-width:100%;
       height:auto;
@@ -162,18 +169,25 @@
           block.parentElement.replaceWith(div);
         });
         mermaid.run({nodes: container.querySelectorAll('.mermaid')});
-        container.querySelectorAll('pre code').forEach(function(block) {
-          hljs.highlightElement(block);
-        });
-        // Convert diff code blocks into rendered diffs
+        // Convert diff code blocks into rendered diffs (before hljs)
         container.querySelectorAll('pre code.language-diff').forEach(function(block) {
           var div = document.createElement('div');
           div.innerHTML = Diff2Html.html(block.textContent, {drawFileList: false, outputFormat: 'line-by-line'});
           block.parentElement.replaceWith(div);
         });
+        container.querySelectorAll('pre code').forEach(function(block) {
+          hljs.highlightElement(block);
+        });
         temml.renderMathInElement(container);
       } else if (ct === 'text/x-diff') {
         container.innerHTML = Diff2Html.html(raw, {drawFileList: true, outputFormat: 'line-by-line'});
+      } else if (ct === 'text/x-mermaid') {
+        mermaid.initialize({startOnLoad: false});
+        var div = document.createElement('div');
+        div.className = 'mermaid';
+        div.textContent = raw;
+        container.appendChild(div);
+        mermaid.run({nodes: container.querySelectorAll('.mermaid')});
       } else if (ct === 'text/markdown') {
         container.innerHTML = marked.parse(raw);
       } else if (ct === 'application/json') {
