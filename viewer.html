@@ -130,6 +130,7 @@
     <script src="/vendor/marked.min.js"></script>
     <script src="/vendor/highlight.min.js"></script>
     <script src="/vendor/temml.min.js"></script>
+    <script src="/vendor/mermaid.min.js"></script>
     <script>
     (function() {
       var contentType = "{{.ContentType}}";
@@ -149,7 +150,16 @@
       var ct = contentType.split(';')[0].trim();
 
       if (ct === 'text/cubbydoc') {
+        mermaid.initialize({startOnLoad: false});
         container.innerHTML = marked.parse(raw);
+        // Convert mermaid code blocks into renderable divs
+        container.querySelectorAll('pre code.language-mermaid').forEach(function(block) {
+          var div = document.createElement('div');
+          div.className = 'mermaid';
+          div.textContent = block.textContent;
+          block.parentElement.replaceWith(div);
+        });
+        mermaid.run({nodes: container.querySelectorAll('.mermaid')});
         container.querySelectorAll('pre code').forEach(function(block) {
           hljs.highlightElement(block);
         });

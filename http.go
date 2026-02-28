@@ -84,6 +84,12 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/vendor/mermaid.min.js" {
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, mermaidJS)
+		return
+	}
+
 	key := r.URL.Path[1:]
 	username, password, ok := r.BasicAuth()
 	if !ok {
