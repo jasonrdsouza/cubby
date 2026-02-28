@@ -90,6 +90,18 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/vendor/diff2html.min.js" {
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, diff2htmlJS)
+		return
+	}
+
+	if r.URL.Path == "/vendor/diff2html.min.css" {
+		w.Header().Set("Content-Type", "text/css")
+		fmt.Fprint(w, diff2htmlCSS)
+		return
+	}
+
 	key := r.URL.Path[1:]
 	username, password, ok := r.BasicAuth()
 	if !ok {

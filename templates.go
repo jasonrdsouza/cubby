@@ -36,6 +36,12 @@ var temmlWoff2 string
 //go:embed static/mermaid.min.js
 var mermaidJS string
 
+//go:embed static/diff2html.min.js
+var diff2htmlJS string
+
+//go:embed static/diff2html.min.css
+var diff2htmlCSS string
+
 func IndexTemplate() *template.Template {
 	indexTemplate, err := template.New("index").Parse(indexFile)
 	if err != nil {

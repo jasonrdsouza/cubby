@@ -6,6 +6,7 @@
     <title>{{.Key}} — Cubby</title>
     <link rel="stylesheet" href="/vendor/rainbow.min.css">
     <link rel="stylesheet" href="/vendor/Temml-Local.css">
+    <link rel="stylesheet" href="/vendor/diff2html.min.css">
     <style>
     body{
       max-width:900px;
@@ -131,6 +132,7 @@
     <script src="/vendor/highlight.min.js"></script>
     <script src="/vendor/temml.min.js"></script>
     <script src="/vendor/mermaid.min.js"></script>
+    <script src="/vendor/diff2html.min.js"></script>
     <script>
     (function() {
       var contentType = "{{.ContentType}}";
@@ -163,7 +165,15 @@
         container.querySelectorAll('pre code').forEach(function(block) {
           hljs.highlightElement(block);
         });
+        // Convert diff code blocks into rendered diffs
+        container.querySelectorAll('pre code.language-diff').forEach(function(block) {
+          var div = document.createElement('div');
+          div.innerHTML = Diff2Html.html(block.textContent, {drawFileList: false, outputFormat: 'line-by-line'});
+          block.parentElement.replaceWith(div);
+        });
         temml.renderMathInElement(container);
+      } else if (ct === 'text/x-diff') {
+        container.innerHTML = Diff2Html.html(raw, {drawFileList: true, outputFormat: 'line-by-line'});
       } else if (ct === 'text/markdown') {
         container.innerHTML = marked.parse(raw);
       } else if (ct === 'application/json') {
