@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{.Key}} — Cubby</title>
     <link rel="stylesheet" href="/vendor/rainbow.min.css">
+    <link rel="stylesheet" href="/vendor/Temml-Local.css">
     <style>
     body{
       max-width:900px;
@@ -128,6 +129,7 @@
 
     <script src="/vendor/marked.min.js"></script>
     <script src="/vendor/highlight.min.js"></script>
+    <script src="/vendor/temml.min.js"></script>
     <script>
     (function() {
       var contentType = "{{.ContentType}}";
@@ -146,15 +148,13 @@
       var raw = atob("{{.ContentBase64}}");
       var ct = contentType.split(';')[0].trim();
 
-      if (ct === 'text/markdown') {
-        marked.setOptions({
-          highlight: function(code, lang) {
-            if (lang && hljs.getLanguage(lang)) {
-              return hljs.highlight(code, {language: lang}).value;
-            }
-            return hljs.highlightAuto(code).value;
-          }
+      if (ct === 'text/cubbydoc') {
+        container.innerHTML = marked.parse(raw);
+        container.querySelectorAll('pre code').forEach(function(block) {
+          hljs.highlightElement(block);
         });
+        temml.renderMathInElement(container);
+      } else if (ct === 'text/markdown') {
         container.innerHTML = marked.parse(raw);
       } else if (ct === 'application/json') {
         try {

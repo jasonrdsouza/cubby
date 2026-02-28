@@ -66,6 +66,24 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if r.URL.Path == "/vendor/temml.min.js" {
+		w.Header().Set("Content-Type", "application/javascript")
+		fmt.Fprint(w, temmlJS)
+		return
+	}
+
+	if r.URL.Path == "/vendor/Temml-Local.css" {
+		w.Header().Set("Content-Type", "text/css")
+		fmt.Fprint(w, temmlCSS)
+		return
+	}
+
+	if r.URL.Path == "/vendor/Temml.woff2" {
+		w.Header().Set("Content-Type", "font/woff2")
+		w.Write([]byte(temmlWoff2))
+		return
+	}
+
 	key := r.URL.Path[1:]
 	username, password, ok := r.BasicAuth()
 	if !ok {
