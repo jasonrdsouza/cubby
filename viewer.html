@@ -50,6 +50,24 @@
       overflow-x:auto;
       background:#161b22
     }
+    code.lined{
+      counter-reset:line
+    }
+    code.lined .line{
+      counter-increment:line;
+      display:inline-block;
+      width:100%
+    }
+    code.lined .line::before{
+      content:counter(line);
+      display:inline-block;
+      width:3em;
+      margin-right:1em;
+      text-align:right;
+      color:#6e7681;
+      -webkit-user-select:none;
+      user-select:none
+    }
     #content table{
       border-collapse:collapse;
       width:100%
@@ -183,10 +201,40 @@
         });
         container.appendChild(table);
       } else {
-        // text/plain fallback
-        var pre = document.createElement('pre');
-        pre.textContent = raw;
-        container.appendChild(pre);
+        var langMap = {
+          'text/x-python': 'python',
+          'text/x-go': 'go',
+          'text/x-rust': 'rust',
+          'text/x-java': 'java',
+          'text/x-c': 'c',
+          'text/x-c++': 'cpp',
+          'text/x-ruby': 'ruby',
+          'text/x-shellscript': 'bash',
+          'text/x-sql': 'sql',
+          'text/x-yaml': 'yaml',
+          'text/x-toml': 'ini',
+          'text/typescript': 'typescript',
+          'application/javascript': 'javascript'
+        };
+        var lang = langMap[ct];
+        if (lang) {
+          var pre = document.createElement('pre');
+          var code = document.createElement('code');
+          code.className = 'language-' + lang;
+          code.textContent = raw;
+          pre.appendChild(code);
+          container.appendChild(pre);
+          hljs.highlightElement(code);
+          code.innerHTML = code.innerHTML.split('\n').map(function(line) {
+            return '<span class="line">' + line + '</span>';
+          }).join('\n');
+          code.classList.add('lined');
+        } else {
+          // text/plain fallback
+          var pre = document.createElement('pre');
+          pre.textContent = raw;
+          container.appendChild(pre);
+        }
       }
     })();
     </script>

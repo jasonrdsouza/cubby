@@ -25,7 +25,12 @@ func hasTheme(contentType string) bool {
 	ct = strings.TrimSpace(ct)
 
 	switch ct {
-	case "text/markdown", "text/plain", "text/csv", "application/json":
+	case "text/markdown", "text/plain", "text/csv",
+		"text/x-python", "text/x-go", "text/x-rust",
+		"text/x-java", "text/x-c", "text/x-c++",
+		"text/x-ruby", "text/x-shellscript", "text/x-sql",
+		"text/x-yaml", "text/x-toml", "text/typescript",
+		"application/json", "application/javascript":
 		return true
 	}
 	if strings.HasPrefix(ct, "image/") {
