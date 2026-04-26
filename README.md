@@ -8,11 +8,17 @@ Fetch [latest release version](https://github.com/jasonrdsouza/cubby/releases), 
 
 ```bash
 export CUBBY_VERSION=1.0
+export ARCHITECTURE=amd64
 
-wget -O /tmp/cubby https://github.com/jasonrdsouza/cubby/releases/download/v$CUBBY_VERSION/cubby-linux
+wget -O /tmp/cubby https://github.com/jasonrdsouza/cubby/releases/download/v$CUBBY_VERSION/cubby-linux-$ARCHITECTURE
 sudo mv /tmp/cubby /usr/local/bin/cubby
 chmod +x /usr/local/bin/cubby
 sudo systemctl restart cubby
+```
+
+Or as a 1-liner to install the latest version with fish shell:
+```fish
+wget -O /tmp/cubby https://github.com/jasonrdsouza/cubby/releases/download/(curl -s https://api.github.com/repos/jasonrdsouza/cubby/releases/latest | jq -r ".tag_name")/cubby-linux-(dpkg --print-architecture) && sudo mv /tmp/cubby /usr/local/bin/cubby && chmod +x /usr/local/bin/cubby && sudo systemctl restart cubby
 ```
 
 Note that this assumes you are using [systemd](https://en.wikipedia.org/wiki/Systemd) as the service daemon manager. See an example service definition file at [cubby.service](cubby.service). It must be copied to `/lib/systemd/system/cubby.service`, updated as necessary depending on the user, paths, ports, etc that you wish to configure, and can then be used as follows:
