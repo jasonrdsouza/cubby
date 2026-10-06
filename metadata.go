@@ -1,6 +1,9 @@
 package main
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 type CubbyMetadata struct {
 	ContentType string
@@ -21,8 +24,23 @@ func (m *CubbyMetadata) SetContentType(contentType string) {
 	m.ContentType = contentType
 }
 
+// MarkUpdated sets UpdatedAt to the current time, guaranteeing it moves
+// strictly forward so that the derived ETag changes on every write.
 func (m *CubbyMetadata) MarkUpdated() {
-	m.UpdatedAt = time.Now()
+	now := time.Now()
+	if !now.After(m.UpdatedAt) {
+		now = m.UpdatedAt.Add(time.Nanosecond)
+	}
+	m.UpdatedAt = now
+}
+
+// ETag returns the strong entity tag for the object, derived from UpdatedAt.
+// Legacy objects with a zero UpdatedAt have no ETag (empty string).
+func (m *CubbyMetadata) ETag() string {
+	if m.UpdatedAt.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf(`"%d"`, m.UpdatedAt.UnixNano())
 }
 
 func (m *CubbyMetadata) UpdateReaders(group Group) {

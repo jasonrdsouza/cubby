@@ -12,10 +12,13 @@ import (
 	"github.com/boltdb/bolt"
 )
 
+const allowedMethods = "GET, HEAD, POST, DELETE, OPTIONS"
+
 func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+	w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
+	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, If-Match, If-None-Match")
+	w.Header().Set("Access-Control-Expose-Headers", "ETag, Last-Modified")
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
@@ -111,7 +114,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	user := c.FetchUser(username, password)
 
-	if r.Method == http.MethodGet {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		c.db.View(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
 			log.Printf("Fetched metadata for key %s: %s", key, metadata)
@@ -129,12 +132,28 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			if len(data) == 0 && metadata.Empty() {
 				log.Printf("Key %s not found", key)
 				http.NotFound(w, r)
-			} else if _, raw := r.URL.Query()["raw"]; !raw && acceptsHTML(r) && hasTheme(metadata.ContentType) {
+				return nil
+			}
+
+			if hasTheme(metadata.ContentType) {
+				// response differs by Accept (themed HTML vs raw bytes)
+				w.Header().Set("Vary", "Accept")
+			}
+
+			if _, raw := r.URL.Query()["raw"]; !raw && acceptsHTML(r) && hasTheme(metadata.ContentType) {
 				c.serveThemedView(w, key, metadata, data)
 			} else {
 				w.Header().Set("Content-Type", metadata.ContentType)
-				w.Header().Set("Last-Modified", metadata.UpdatedAt.Format(time.RFC1123))
-				w.Write(data)
+				if metadata.Readers == PublicGroup {
+					w.Header().Set("Cache-Control", "no-cache")
+				} else {
+					w.Header().Set("Cache-Control", "private, no-cache")
+				}
+				if etag := metadata.ETag(); etag != "" {
+					w.Header().Set("ETag", etag)
+				}
+				// handles conditional requests (304/412), Range, and Last-Modified
+				http.ServeContent(w, r, key, metadata.UpdatedAt, bytes.NewReader(data))
 			}
 			return nil
 		})
@@ -156,6 +175,9 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// precondition check and write happen in the same transaction so that
+		// concurrent conditional writers cannot both pass the check
+		var newETag string
 		err = c.db.Update(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
 
@@ -164,6 +186,10 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				log.Println("Unauthorized overwrite attempt")
 				w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
 				http.Error(w, "Unauthorized Overwrite", http.StatusUnauthorized)
+				return nil
+			}
+
+			if !c.checkWritePreconditions(w, r, key, metadata, tx) {
 				return nil
 			}
 
@@ -176,12 +202,19 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			metadata.UpdateWriters(StringToGroup(r.Header.Get(CUBBY_WRITER_HEADER)))
 			metadata.SetContentType(r.Header.Get("Content-Type"))
 			metadata.MarkUpdated()
-			return c.PutMetadata(key, metadata, tx)
+			if err := c.PutMetadata(key, metadata, tx); err != nil {
+				return err
+			}
+			newETag = metadata.ETag()
+			return nil
 		})
 		if err != nil {
 			log.Printf("Error persisting data: %v", err)
 			http.Error(w, "Could not persist data", http.StatusInternalServerError)
 			return
+		}
+		if newETag != "" {
+			w.Header().Set("ETag", newETag)
 		}
 	} else if r.Method == http.MethodDelete {
 		// auth check: disallow public deletes
@@ -192,6 +225,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		responded := false
 		err := c.db.Update(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
 
@@ -200,6 +234,12 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				log.Println("Unauthorized delete attempt")
 				w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
 				http.Error(w, "Unauthorized Writer", http.StatusUnauthorized)
+				responded = true
+				return nil
+			}
+
+			if !c.checkWritePreconditions(w, r, key, metadata, tx) {
+				responded = true
 				return nil
 			}
 
@@ -214,12 +254,34 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		if !responded {
+			w.WriteHeader(http.StatusOK)
+		}
 	} else {
 		log.Printf("Invalid action for key: %s", key)
-		fmt.Fprintf(w, "Invalid action for key: %s", key)
+		w.Header().Set("Allow", allowedMethods)
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, "Invalid action for key: %s", key)
 	}
+}
+
+// checkWritePreconditions evaluates If-Match / If-None-Match for a POST or
+// DELETE against the key's current state, read within the caller's write
+// transaction. On failure it writes a 412 response (carrying the current ETag,
+// if any) and returns false.
+func (c *CubbyServer) checkWritePreconditions(w http.ResponseWriter, r *http.Request, key string, metadata *CubbyMetadata, tx *bolt.Tx) bool {
+	exists := !metadata.Empty() || tx.Bucket([]byte(c.dataBucket)).Get([]byte(key)) != nil
+	etag := metadata.ETag()
+	if writePreconditionsPass(r, exists, etag) {
+		return true
+	}
+
+	log.Printf("Precondition failed for key: %s", key)
+	if etag != "" {
+		w.Header().Set("ETag", etag)
+	}
+	http.Error(w, "Precondition Failed", http.StatusPreconditionFailed)
+	return false
 }
 
 func (c *CubbyServer) serveThemedView(w http.ResponseWriter, key string, metadata *CubbyMetadata, data []byte) {

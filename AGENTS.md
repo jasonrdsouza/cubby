@@ -90,7 +90,9 @@ The entire application is in a single Go package (main) with no subdirectories. 
 - Serves index page at `/` showing all occupied keys
 - Serves the embedded JavaScript client at `/client.js`
 - All other paths are treated as keys: `/:key`
-- Supports GET, POST (for writes), DELETE methods
+- Supports GET, HEAD, POST (for writes), DELETE methods
+- Raw GETs are served via `http.ServeContent` with a strong ETag derived from `metadata.UpdatedAt` (`CubbyMetadata.ETag()`), so conditional GETs and Range work; themed views get no ETag
+- POST/DELETE honor `If-Match` / `If-None-Match` (`preconditions.go`), evaluated after auth and inside the same bolt Update transaction as the write
 - Enforces authorization on every operation based on metadata
 
 **Authentication & Authorization (`users.go`, `metadata.go`)**
@@ -151,7 +153,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 ## Important Notes
 
-- **No test files**: This codebase has no automated tests
+- **Tests**: HTTP handler tests live in `http_test.go` (run with `go test ./...`). `-race` needs `-gcflags=all=-d=checkptr=0` because boltdb v1.3.1 trips checkptr
 - **Single binary**: Everything compiles into one executable
 - **No TLS**: Cubby does not provide HTTPS - use a reverse proxy (NGINX/Caddy) for production
 - **Group enum order**: The `Group` constants in `users.go:22-26` must never be reordered as the enum values are stored in the database
