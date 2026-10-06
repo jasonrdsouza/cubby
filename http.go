@@ -35,7 +35,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		}{
 			Keys:         c.ListAtomic(),
 			Version:      c.Version(),
-			ShortVersion: c.Version()[:7],
+			ShortVersion: c.ShortVersion(),
 		}
 
 		err := c.indexTemplate.Execute(w, tmplData)
@@ -308,7 +308,7 @@ func (c *CubbyServer) serveThemedView(w http.ResponseWriter, key string, metadat
 		IsImage:      isImage,
 		UpdatedAt:    metadata.UpdatedAt.Format(time.RFC1123),
 		Version:      c.Version(),
-		ShortVersion: c.Version()[:7],
+		ShortVersion: c.ShortVersion(),
 	}
 
 	if !isImage {

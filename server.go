@@ -87,6 +87,19 @@ func (c *CubbyServer) Version() string {
 	return BuiltGitCommit
 }
 
+// ShortVersion returns the abbreviated commit hash for display. Builds without
+// VCS info (e.g. go test, or building outside a git checkout) have no commit.
+func (c *CubbyServer) ShortVersion() string {
+	v := c.Version()
+	if v == "" {
+		return "unknown"
+	}
+	if len(v) > 7 {
+		return v[:7]
+	}
+	return v
+}
+
 func (c *CubbyServer) GetMetadata(key string, tx *bolt.Tx) *CubbyMetadata {
 	b := tx.Bucket([]byte(c.metaBucket))
 	v := b.Get([]byte(key))
