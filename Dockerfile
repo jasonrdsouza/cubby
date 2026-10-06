@@ -1,7 +1,7 @@
 ###################################
 # 1. Build in a Go-based image   #
 ###################################
-FROM golang:1.19-alpine as builder
+FROM golang:1.24-alpine AS builder
 RUN apk add --no-cache git # add deps here (like make) if needed
 WORKDIR /go/cubby
 COPY . .
@@ -16,8 +16,8 @@ FROM alpine:latest
 COPY --from=builder /go/cubby/cubby /cubby
 VOLUME /data
 # expose port if needed
-EXPOSE 8080
+EXPOSE 8383
 ENTRYPOINT ["/cubby"]
 # any flags here, for example use the data folder
-CMD ["serve", "-port", "8080", "-path","/data/cubby.db"]
+CMD ["serve", "-port", "8383", "-path", "/data/cubby.db"]
 

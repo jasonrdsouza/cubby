@@ -4,22 +4,34 @@ A simple, web-native object store.
 ## Usage
 
 ### Deploying
-Fetch [latest release version](https://github.com/jasonrdsouza/cubby/releases), or whichever version is specified in `CUBBY_VERSION`:
+[`deploy.sh`](deploy.sh) installs or upgrades Cubby from a [GitHub release](https://github.com/jasonrdsouza/cubby/releases). It detects the architecture, verifies the download against the release's `SHA256SUMS`, keeps the previous binary as `cubby.prev`, restarts the service, and rolls back automatically if the server doesn't respond afterwards.
 
 ```bash
-export CUBBY_VERSION=1.0
-export ARCHITECTURE=amd64
+# install the latest release
+curl -fsSL https://raw.githubusercontent.com/jasonrdsouza/cubby/main/deploy.sh | bash
 
-wget -O /tmp/cubby https://github.com/jasonrdsouza/cubby/releases/download/v$CUBBY_VERSION/cubby-linux-$ARCHITECTURE
-sudo mv /tmp/cubby /usr/local/bin/cubby
-chmod +x /usr/local/bin/cubby
-sudo systemctl restart cubby
+# or keep a copy on the server
+curl -fsSLO https://raw.githubusercontent.com/jasonrdsouza/cubby/main/deploy.sh && chmod +x deploy.sh
+./deploy.sh              # latest release
+./deploy.sh v1.6         # a specific release
+./deploy.sh --rollback   # restore the previously installed binary
 ```
 
-Or as a 1-liner to install the latest version with fish shell:
-```fish
-wget -O /tmp/cubby https://github.com/jasonrdsouza/cubby/releases/download/(curl -s https://api.github.com/repos/jasonrdsouza/cubby/releases/latest | jq -r ".tag_name")/cubby-linux-(dpkg --print-architecture) && sudo mv /tmp/cubby /usr/local/bin/cubby && chmod +x /usr/local/bin/cubby && sudo systemctl restart cubby
+Settings are environment variables:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CUBBY_BIN` | `/usr/local/bin/cubby` | where the binary is installed |
+| `CUBBY_SERVICE` | `cubby` | systemd unit to restart |
+| `CUBBY_HEALTH_URL` | `http://localhost:8383/` | checked after the restart; set it to match your `-port` |
+| `CUBBY_DB` | unset | if set, the DB is copied to `$CUBBY_DB.bak` (with the service stopped) before the new version starts |
+
+For example, with the sample [cubby.service](cubby.service):
+```bash
+CUBBY_HEALTH_URL=http://localhost:8081/ CUBBY_DB=/var/data/cubby.db ./deploy.sh
 ```
+
+Checksums are published from v1.6 onwards; to install an older release, download it manually from the releases page.
 
 Note that this assumes you are using [systemd](https://en.wikipedia.org/wiki/Systemd) as the service daemon manager. See an example service definition file at [cubby.service](cubby.service). It must be copied to `/lib/systemd/system/cubby.service`, updated as necessary depending on the user, paths, ports, etc that you wish to configure, and can then be used as follows:
 
@@ -38,7 +50,7 @@ sudo systemctl restart cubby
 ```
 
 ### Authenticating
-By default, Cubby stores all of its data in a single [BoltDB](https://github.com/boltdb/bolt) file (canonically called `caddy.db`). Before exposing the service to the world, you must create users to authenticate requests against. Subsequent Cubby operations (particularly "write" operations) will only succeed with valid user credentials.
+By default, Cubby stores all of its data in a single [BoltDB](https://github.com/boltdb/bolt) file (canonically called `cubby.db`). Before exposing the service to the world, you must create users to authenticate requests against. Subsequent Cubby operations (particularly "write" operations) will only succeed with valid user credentials.
 
 Adding users can be accomplished via the `cubby adduser` command as follows:
 
@@ -62,7 +74,7 @@ Finally, listing the existing users can be done as follows:
 ./bin/cubby listusers -path data/cubby.db
 ```
 
-All user operations require direct access to the underlying `caddy.db` file.
+All user operations require direct access to the underlying `cubby.db` file.
 
 #### Transport Security
 **Note that Cubby itself does not provide transport level security. It is up to the system administrator to ensure that Cubby is only accessible via a secure channel (ie. HTTPS).** The easiest way to accomplish this is to use a reverse proxy like [NGINX](https://www.nginx.com/) or [Caddy](https://caddyserver.com/).
@@ -147,13 +159,11 @@ GOOS=linux GOARCH=amd64 go build -o bin/cubby-linux
 ```
 
 ### Releasing
-Build binaries, then tag and push the release. Out of band, make the Github release, and upload the newly generated binaries:
+Tag a commit on `main` and push the tag. The [release workflow](.github/workflows/release.yml) builds binaries for Linux, macOS and Windows, publishes them with a `SHA256SUMS` file, and creates the GitHub release with generated notes:
 ```bash
-export CUBBY_VERSION=1.0
+export CUBBY_VERSION=1.6
 
-go fmt && go tool goimports -w . && go vet && go build -o bin/cubby-darwin && GOOS=linux GOARCH=amd64 go build -o bin/
-cubby-linux
-
+go vet ./... && go test ./...
 git tag v$CUBBY_VERSION && git push origin v$CUBBY_VERSION
 ```
 
