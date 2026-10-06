@@ -144,6 +144,12 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				c.serveThemedView(w, key, metadata, data)
 			} else {
 				w.Header().Set("Content-Type", metadata.ContentType)
+				// no-cache: caches may store the response but must revalidate
+				// (If-None-Match -> 304) before every reuse, so clients never see
+				// stale data. It is not no-store, which would forbid storing it.
+				// private: only the end user's own cache (e.g. the browser) may
+				// store it, never a shared proxy/CDN, which could otherwise serve
+				// a restricted object without cubby's reader check running.
 				if metadata.Readers == PublicGroup {
 					w.Header().Set("Cache-Control", "no-cache")
 				} else {
