@@ -4,7 +4,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -18,14 +17,6 @@ const (
 	testPassword = "secret"
 	testAdmin    = "root"
 )
-
-func TestMain(m *testing.M) {
-	// test binaries carry no VCS info; the templates slice the version string
-	if BuiltGitCommit == "" {
-		BuiltGitCommit = "testbuild"
-	}
-	os.Exit(m.Run())
-}
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
@@ -417,4 +408,25 @@ func TestLegacyKeyWithoutUpdatedAt(t *testing.T) {
 	resp, _ = do(t, ts, http.MethodPost, "legacy", "new", withAuth, withHeader("If-Match", `"0"`))
 	expectStatus(t, resp, http.StatusPreconditionFailed)
 	put(t, ts, "legacy", "new", withHeader("If-Match", "*"))
+}
+
+func TestPagesRenderWithoutVCSInfo(t *testing.T) {
+	saved := BuiltGitCommit
+	BuiltGitCommit = "" // as in go test or builds outside a git checkout
+	t.Cleanup(func() { BuiltGitCommit = saved })
+
+	ts := newTestServer(t)
+	put(t, ts, "notes", "# hello", withHeader("Content-Type", "text/markdown"))
+
+	resp, body := do(t, ts, http.MethodGet, "", "")
+	expectStatus(t, resp, http.StatusOK)
+	if !strings.Contains(body, "notes") {
+		t.Error("index page missing key listing")
+	}
+
+	resp, body = do(t, ts, http.MethodGet, "notes", "", withHeader("Accept", "text/html"))
+	expectStatus(t, resp, http.StatusOK)
+	if !strings.Contains(body, "unknown") {
+		t.Error("themed view missing fallback version")
+	}
 }
