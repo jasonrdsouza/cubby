@@ -128,6 +128,16 @@
         <div id="textInputDiv" style="display: none;">
           <textarea id="textInput" rows="4" cols="50"></textarea>
         </div>
+        <div id="credentialsDiv" style="display: none;">
+          <div>
+            <label for="username">Username:</label>
+            <input type="text" id="username" autocomplete="username">
+          </div>
+          <div>
+            <label for="password">Password:</label>
+            <input type="password" id="password" autocomplete="current-password">
+          </div>
+        </div>
         <button type="submit" class="upload-button">Upload</button>
       </form>
     </div>
@@ -138,6 +148,16 @@
       const form = document.getElementById('uploadForm');
       const fileInputDiv = document.getElementById('fileInputDiv');
       const textInputDiv = document.getElementById('textInputDiv');
+      const credentialsDiv = document.getElementById('credentialsDiv');
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+
+      // Basic auth header value; encodes as UTF-8 to match the server's
+      // WWW-Authenticate charset (btoa alone rejects non-Latin-1 input)
+      function basicAuth(username, password) {
+        const bytes = new TextEncoder().encode(`${username}:${password}`);
+        return 'Basic ' + btoa(String.fromCharCode(...bytes));
+      }
 
       form.querySelectorAll('input[name="uploadType"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
@@ -184,20 +204,40 @@
         }
 
         try {
+          const headers = {
+            'Content-Type': inferredContentType,
+            'X-Cubby-Reader': accessType,
+          };
+          // Browsers don't reliably show their login prompt for a fetch() 401,
+          // so credentials are collected in the form instead
+          const username = usernameInput.value;
+          const password = passwordInput.value;
+          if (username && password) {
+            headers['Authorization'] = basicAuth(username, password);
+          }
+
           const response = await fetch(`/${key}`, {
             method: 'POST',
             body: content,
-            headers: {
-              'Content-Type': inferredContentType,
-              'X-Cubby-Readers': accessType,
-            }
+            headers,
           });
 
           if (response.ok) {
             statusDiv.textContent = `Successfully uploaded to key: ${key}`;
             form.reset();
+            // keep credentials for further uploads from this page
+            usernameInput.value = username;
+            passwordInput.value = password;
+          } else if (response.status === 401) {
+            credentialsDiv.style.display = 'block';
+            statusDiv.textContent = username
+              ? 'Upload failed: invalid credentials, or this user may not write to this key.'
+              : 'Sign in required: enter your username and password, then press Upload again.';
+            (username ? passwordInput : usernameInput).focus();
           } else {
-            statusDiv.textContent = `Upload failed: ${response.statusText}`;
+            // statusText is empty over HTTP/2, so show the code and server message
+            const message = (await response.text()).trim();
+            statusDiv.textContent = `Upload failed: ${response.status} ${message}`;
           }
         } catch (error) {
           statusDiv.textContent = `Error: ${error.message}`;
