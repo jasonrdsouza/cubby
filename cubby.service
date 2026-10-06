@@ -9,6 +9,13 @@ RestartSec=3
 User=jason
 ExecStart=/usr/local/bin/cubby serve -path /var/data/cubby.db -port=8081 -max=200
 
+# Hardening: cubby only needs to write its database, so make the rest of
+# the filesystem read-only. ReadWritePaths must contain the -path directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/data
+
 [Install]
 WantedBy=multi-user.target
 
