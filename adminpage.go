@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/boltdb/bolt"
+	bolt "go.etcd.io/bbolt"
 )
 
 // ADMIN_PATH is reserved for the admin page: it and everything under it can't

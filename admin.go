@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/boltdb/bolt"
+	bolt "go.etcd.io/bbolt"
 )
 
 func (c *CubbyServer) FetchUser(name string, password string) User {

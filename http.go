@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/boltdb/bolt"
+	bolt "go.etcd.io/bbolt"
 )
 
 const allowedMethods = "GET, HEAD, POST, DELETE, OPTIONS"

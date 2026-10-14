@@ -135,7 +135,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 ### Data Storage
 
-- **Database**: BoltDB (embedded key-value store)
+- **Database**: BoltDB (embedded key-value store), via etcd's maintained fork `go.etcd.io/bbolt` (imported as `bolt`). It reads and writes the same file format as the archived `github.com/boltdb/bolt` that versions before 2.1 used
 - **Location**: Single file specified by `-path` flag (default: `cubby.db`)
 - **Buckets**:
   - Data bucket: stores actual key-value data
@@ -157,7 +157,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 ## Important Notes
 
-- **Tests**: HTTP handler tests live in `http_test.go` (run with `go test ./...`). `-race` needs `-gcflags=all=-d=checkptr=0` because boltdb v1.3.1 trips checkptr
+- **Tests**: HTTP handler tests live in `http_test.go`, `auth_test.go` and `adminpage_test.go` (run with `go test ./...`, or `go test -race ./...`)
 - **Single binary**: Everything compiles into one executable
 - **No TLS**: Cubby does not provide HTTPS - use a reverse proxy (NGINX/Caddy) for production
 - **Gob encoding**: User and metadata structs use Go's gob encoding, which matches fields by name, ignores stored fields the struct lacks, and zero-fills fields the record lacks. Field names must remain consistent, and permission fields must be chosen so their zero value is the least privileged (`Admin: false`, `Public: false`), so records missing them fail closed

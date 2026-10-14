@@ -50,7 +50,7 @@ sudo systemctl restart cubby
 ```
 
 ### Authenticating
-By default, Cubby stores all of its data in a single [BoltDB](https://github.com/boltdb/bolt) file (canonically called `cubby.db`). Before exposing the service to the world, create an admin. Only admins can write.
+By default, Cubby stores all of its data in a single [BoltDB](https://github.com/etcd-io/bbolt) file (canonically called `cubby.db`). Before exposing the service to the world, create an admin. Only admins can write.
 
 ```bash
 # add an admin (or reset an existing admin's password)
