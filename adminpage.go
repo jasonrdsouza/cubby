@@ -47,10 +47,9 @@ func (c *CubbyServer) serveAdmin(w http.ResponseWriter, r *http.Request, user Us
 
 // adminNotice is shown at the top of the admin page after an action.
 type adminNotice struct {
-	Error     string
-	KeyName   string // set with Secret when a reader key secret was generated
-	Secret    string
-	ServerURL string
+	Error   string
+	KeyName string // set with Secret when a reader key secret was generated
+	Secret  string
 }
 
 func (c *CubbyServer) adminAddKey(w http.ResponseWriter, r *http.Request) {
@@ -70,11 +69,7 @@ func (c *CubbyServer) showNewSecret(w http.ResponseWriter, r *http.Request, rege
 		c.renderAdminPage(w, http.StatusBadRequest, adminNotice{Error: err.Error()})
 		return
 	}
-	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
-		scheme = "https"
-	}
-	c.renderAdminPage(w, http.StatusOK, adminNotice{KeyName: name, Secret: secret, ServerURL: scheme + "://" + r.Host})
+	c.renderAdminPage(w, http.StatusOK, adminNotice{KeyName: name, Secret: secret})
 }
 
 func (c *CubbyServer) adminDeleteKey(w http.ResponseWriter, r *http.Request) {

@@ -104,7 +104,7 @@
     <div class="notice">
       <p>Secret for reader key <strong>{{.KeyName}}</strong>. Copy it now; it won't be shown again.</p>
       <p><code class="secret">{{.Secret}}</code></p>
-      <p class="muted">Use it as Basic Auth, eg. <code>curl -u {{.KeyName}}:{{.Secret}} {{.ServerURL}}/&lt;key&gt;</code></p>
+      <p class="muted">Sign in with username <strong>{{.KeyName}}</strong> and this secret as the password.</p>
     </div>
     {{end}}
 
