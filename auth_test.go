@@ -100,6 +100,23 @@ func TestAccessPersistsAcrossWrites(t *testing.T) {
 	expectStatus(t, resp, http.StatusOK)
 }
 
+// X-Cubby-Reader states the complete access, so a shorter list revokes the
+// keys it leaves out.
+func TestReaderHeaderReplacesKeyList(t *testing.T) {
+	ts, cubby := newTestCubby(t)
+	addTestReaderKey(t, cubby, "work")
+	put(t, ts, "k", "v1", withHeader(CUBBY_READER_HEADER, "work,"+testReader))
+	put(t, ts, "k", "v2", withHeader(CUBBY_READER_HEADER, "work"))
+
+	resp, _ := do(t, ts, http.MethodGet, "k", "", withReader)
+	expectStatus(t, resp, http.StatusUnauthorized)
+	resp, body := do(t, ts, http.MethodGet, "k", "", withBasicAuth("work", testPassword))
+	expectStatus(t, resp, http.StatusOK)
+	if body != "v2" {
+		t.Errorf("body = %q, want v2", body)
+	}
+}
+
 func TestRemovingReaderKeyRevokesItsBlobs(t *testing.T) {
 	ts, cubby := newTestCubby(t)
 	put(t, ts, "family", "data", withHeader(CUBBY_READER_HEADER, testReader))
