@@ -39,17 +39,21 @@ Default port is 8383. Access the UI at http://localhost:8383/
 All user commands require direct access to the BoltDB file (the server must be stopped):
 
 ```bash
-# Add admin (or reset an admin's password)
+# Add admin (or reset an admin's password); remove an admin
 ./bin/cubby addadmin -path data/cubby.db -name username -password password
+./bin/cubby removeadmin -path data/cubby.db -name username
 
 # Add reader key (prints its generated secret once); -regenerate replaces the secret
-./bin/cubby addkey -path data/cubby.db -name family
+./bin/cubby addreader -path data/cubby.db -name family
+
+# Remove a reader key (also unlists it from every blob)
+./bin/cubby removereader -path data/cubby.db -name family
 
 # List admins and reader keys
-./bin/cubby listusers -path data/cubby.db
+./bin/cubby credentials -path data/cubby.db
 
-# Remove an admin or reader key (also unlists a reader key from every blob)
-./bin/cubby removeuser -path data/cubby.db -name family
+# Write a compacted copy (reclaims space from deleted/overwritten blobs); swap the files yourself
+./bin/cubby compact -path data/cubby.db -o data/cubby.compact.db
 ```
 
 ### Client Commands
@@ -103,7 +107,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 - Unauthenticated requests (or bad credentials) get an `AnonymousUser`
 - Admins read and write everything; reader keys read public blobs and private blobs that list them; anonymous reads public blobs only. Only admins write or delete
 - Per-blob read access is set with the `X-Cubby-Reader` header on POST: `public`, `private` (admins only), or a comma-separated list of reader key names (validated against existing reader keys). Omitted keeps the existing access, or public for a new blob
-- `RemoveUser` also strips a removed reader key from every blob's `ReaderKeys`, so a recreated key of the same name inherits nothing
+- `RemoveReaderKey` also strips the key from every blob's `ReaderKeys`, so a recreated key of the same name inherits nothing. `RemoveAdmin` and `RemoveReaderKey` each refuse the other kind of credential
 
 **Metadata (`metadata.go`)**
 - Each key has associated metadata: ContentType, UpdatedAt, Public, ReaderKeys
@@ -131,11 +135,12 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 **Entry Point (`cubby.go`)**
 - CLI uses flag.NewFlagSet for subcommands
-- Main subcommands: serve, listusers, addadmin, addkey, removeuser, get, put, remove
+- Main subcommands: serve, credentials, addadmin, removeadmin, addreader, removereader, compact, get, put, remove. Unknown subcommands print usage and exit 1
+- `compact` (`compact.go`) wraps `bolt.Compact`: it opens the source read-only (so it fails while the server holds the lock) and writes to a new file that must not exist; it never replaces the original
 
 ### Data Storage
 
-- **Database**: BoltDB (embedded key-value store)
+- **Database**: BoltDB (embedded key-value store), via etcd's maintained fork `go.etcd.io/bbolt` (imported as `bolt`). It reads and writes the same file format as the archived `github.com/boltdb/bolt` that versions before 2.1 used
 - **Location**: Single file specified by `-path` flag (default: `cubby.db`)
 - **Buckets**:
   - Data bucket: stores actual key-value data
@@ -157,7 +162,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 ## Important Notes
 
-- **Tests**: HTTP handler tests live in `http_test.go` (run with `go test ./...`). `-race` needs `-gcflags=all=-d=checkptr=0` because boltdb v1.3.1 trips checkptr
+- **Tests**: HTTP handler tests live in `http_test.go`, `auth_test.go` and `adminpage_test.go`, and compaction tests in `compact_test.go` (run with `go test ./...`, or `go test -race ./...`)
 - **Single binary**: Everything compiles into one executable
 - **No TLS**: Cubby does not provide HTTPS - use a reverse proxy (NGINX/Caddy) for production
 - **Gob encoding**: User and metadata structs use Go's gob encoding, which matches fields by name, ignores stored fields the struct lacks, and zero-fills fields the record lacks. Field names must remain consistent, and permission fields must be chosen so their zero value is the least privileged (`Admin: false`, `Public: false`), so records missing them fail closed

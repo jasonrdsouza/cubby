@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/boltdb/bolt"
+	bolt "go.etcd.io/bbolt"
 )
 
 func TestReaderKeyAccess(t *testing.T) {
@@ -120,7 +120,7 @@ func TestRemovingReaderKeyRevokesItsBlobs(t *testing.T) {
 	ts, cubby := newTestCubby(t)
 	put(t, ts, "family", "data", withHeader(CUBBY_READER_HEADER, testReader))
 
-	if err := cubby.RemoveUser(testReader); err != nil {
+	if err := cubby.RemoveReaderKey(testReader); err != nil {
 		t.Fatal(err)
 	}
 	resp, _ := do(t, ts, http.MethodGet, "family", "", withReader)
@@ -132,6 +132,31 @@ func TestRemovingReaderKeyRevokesItsBlobs(t *testing.T) {
 	expectStatus(t, resp, http.StatusUnauthorized)
 	resp, _ = do(t, ts, http.MethodGet, "family", "", withAdmin)
 	expectStatus(t, resp, http.StatusOK)
+}
+
+func TestRemoveChecksCredentialKind(t *testing.T) {
+	_, cubby := newTestCubby(t)
+	if err := cubby.RemoveAdmin(testReader); err == nil {
+		t.Error("RemoveAdmin removed a reader key")
+	}
+	if err := cubby.RemoveReaderKey(testAdmin); err == nil {
+		t.Error("RemoveReaderKey removed an admin")
+	}
+	for _, name := range []string{"nobody", ""} {
+		if cubby.RemoveAdmin(name) == nil || cubby.RemoveReaderKey(name) == nil {
+			t.Errorf("removing missing credential %q succeeded", name)
+		}
+	}
+
+	if err := cubby.RemoveAdmin(testAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if err := cubby.RemoveReaderKey(testReader); err != nil {
+		t.Fatal(err)
+	}
+	if creds := cubby.ListCredentials(); len(creds) != 0 {
+		t.Errorf("credentials left after removing both: %v", creds)
+	}
 }
 
 func TestAddReaderKey(t *testing.T) {

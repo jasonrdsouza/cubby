@@ -23,22 +23,30 @@ func main() {
 	serveMaxSize := serveCmd.Int("max", 10, "max cubby object size in MB")
 	serveTrustedOrigins := serveCmd.String("trusted-origins", "", "comma-separated origins (eg. https://app.example.com) whose pages may make cross-origin writes from a browser")
 
-	listUserCmd := flag.NewFlagSet("listusers", flag.ExitOnError)
-	listUserDbFile := listUserCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	credentialsCmd := flag.NewFlagSet("credentials", flag.ExitOnError)
+	credentialsDbFile := credentialsCmd.String("path", "cubby.db", "filepath where cubby data is stored")
 
 	addAdminCmd := flag.NewFlagSet("addadmin", flag.ExitOnError)
 	addAdminDbFile := addAdminCmd.String("path", "cubby.db", "filepath where cubby data is stored")
 	addAdminName := addAdminCmd.String("name", "", "admin username to add (or whose password to reset)")
 	addAdminPassword := addAdminCmd.String("password", "", "password for this admin")
 
-	addKeyCmd := flag.NewFlagSet("addkey", flag.ExitOnError)
-	addKeyDbFile := addKeyCmd.String("path", "cubby.db", "filepath where cubby data is stored")
-	addKeyName := addKeyCmd.String("name", "", "reader key name to add")
-	addKeyRegenerate := addKeyCmd.Bool("regenerate", false, "replace the secret of an existing reader key")
+	removeAdminCmd := flag.NewFlagSet("removeadmin", flag.ExitOnError)
+	removeAdminDbFile := removeAdminCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	removeAdminName := removeAdminCmd.String("name", "", "admin to remove")
 
-	removeUserCmd := flag.NewFlagSet("removeuser", flag.ExitOnError)
-	removeUserDbFile := removeUserCmd.String("path", "cubby.db", "filepath where cubby data is stored")
-	removeUserName := removeUserCmd.String("name", "", "admin or reader key to remove")
+	addReaderCmd := flag.NewFlagSet("addreader", flag.ExitOnError)
+	addReaderDbFile := addReaderCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	addReaderName := addReaderCmd.String("name", "", "reader key name to add")
+	addReaderRegenerate := addReaderCmd.Bool("regenerate", false, "replace the secret of an existing reader key")
+
+	removeReaderCmd := flag.NewFlagSet("removereader", flag.ExitOnError)
+	removeReaderDbFile := removeReaderCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	removeReaderName := removeReaderCmd.String("name", "", "reader key to remove (it is also removed from every blob that lists it)")
+
+	compactCmd := flag.NewFlagSet("compact", flag.ExitOnError)
+	compactDbFile := compactCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	compactOut := compactCmd.String("o", "", "filepath to write the compacted copy to (must not exist)")
 
 	getCmd := flag.NewFlagSet("get", flag.ExitOnError)
 	getAddr := getCmd.String("addr", DEFAULT_ADDR, "cubby server address")
@@ -59,17 +67,23 @@ func main() {
 		fmt.Fprint(os.Stderr, " serve:\n")
 		serveCmd.PrintDefaults()
 
-		fmt.Fprint(os.Stderr, " listusers:\n")
-		listUserCmd.PrintDefaults()
+		fmt.Fprint(os.Stderr, " credentials:\n")
+		credentialsCmd.PrintDefaults()
 
 		fmt.Fprint(os.Stderr, " addadmin:\n")
 		addAdminCmd.PrintDefaults()
 
-		fmt.Fprint(os.Stderr, " addkey:\n")
-		addKeyCmd.PrintDefaults()
+		fmt.Fprint(os.Stderr, " removeadmin:\n")
+		removeAdminCmd.PrintDefaults()
 
-		fmt.Fprint(os.Stderr, " removeuser:\n")
-		removeUserCmd.PrintDefaults()
+		fmt.Fprint(os.Stderr, " addreader:\n")
+		addReaderCmd.PrintDefaults()
+
+		fmt.Fprint(os.Stderr, " removereader:\n")
+		removeReaderCmd.PrintDefaults()
+
+		fmt.Fprint(os.Stderr, " compact:\n")
+		compactCmd.PrintDefaults()
 
 		fmt.Fprint(os.Stderr, " get:\n")
 		getCmd.PrintDefaults()
@@ -82,7 +96,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("Please specify subcommand (serve, listusers, addadmin, addkey, removeuser, get, put, remove)")
+		fmt.Println("Please specify subcommand (serve, credentials, addadmin, removeadmin, addreader, removereader, compact, get, put, remove)")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -91,18 +105,19 @@ func main() {
 	case "serve":
 		serveCmd.Parse(os.Args[2:])
 		startServer(*servePort, *serveFile, *serveMaxSize, *serveTrustedOrigins)
-	case "listusers":
-		listUserCmd.Parse(os.Args[2:])
-		cubbyServer := adminServer(*listUserDbFile)
-		users := cubbyServer.ListUsers()
-		if len(users) == 0 {
-			fmt.Println("No users found")
-		} else {
-			fmt.Println("Users:")
-			for _, user := range users {
-				fmt.Printf("- %s (%s)\n", user.Name(), user.Role())
+	case "credentials":
+		credentialsCmd.Parse(os.Args[2:])
+		cubbyServer := adminServer(*credentialsDbFile)
+		var admins, readers []string
+		for _, user := range cubbyServer.ListCredentials() {
+			if user.Admin {
+				admins = append(admins, user.Name())
+			} else {
+				readers = append(readers, user.Name())
 			}
 		}
+		printNames("Admins", admins)
+		printNames("Reader keys", readers)
 	case "addadmin":
 		addAdminCmd.Parse(os.Args[2:])
 		cubbyServer := adminServer(*addAdminDbFile)
@@ -110,26 +125,42 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-	case "addkey":
-		addKeyCmd.Parse(os.Args[2:])
-		cubbyServer := adminServer(*addKeyDbFile)
+	case "removeadmin":
+		removeAdminCmd.Parse(os.Args[2:])
+		cubbyServer := adminServer(*removeAdminDbFile)
+		if err := cubbyServer.RemoveAdmin(*removeAdminName); err != nil {
+			log.Fatal(err)
+		}
+	case "addreader":
+		addReaderCmd.Parse(os.Args[2:])
+		cubbyServer := adminServer(*addReaderDbFile)
 		addOrRegenerate := cubbyServer.AddReaderKey
-		if *addKeyRegenerate {
+		if *addReaderRegenerate {
 			addOrRegenerate = cubbyServer.RegenerateReaderKey
 		}
-		secret, err := addOrRegenerate(*addKeyName)
+		secret, err := addOrRegenerate(*addReaderName)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Printf("Reader key %s: %s\n", *addKeyName, secret)
+		fmt.Printf("Reader key %s: %s\n", *addReaderName, secret)
 		fmt.Println("Use it as Basic Auth username:password. The secret is not shown again.")
-	case "removeuser":
-		removeUserCmd.Parse(os.Args[2:])
-		cubbyServer := adminServer(*removeUserDbFile)
-		err := cubbyServer.RemoveUser(*removeUserName)
+	case "removereader":
+		removeReaderCmd.Parse(os.Args[2:])
+		cubbyServer := adminServer(*removeReaderDbFile)
+		if err := cubbyServer.RemoveReaderKey(*removeReaderName); err != nil {
+			log.Fatal(err)
+		}
+	case "compact":
+		compactCmd.Parse(os.Args[2:])
+		if *compactOut == "" {
+			log.Fatal("compact: -o is required")
+		}
+		before, after, err := CompactDB(*compactDbFile, *compactOut)
 		if err != nil {
 			log.Fatal(err)
 		}
+		fmt.Printf("Compacted %s (%s) into %s (%s).\n", *compactDbFile, formatBytes(before), *compactOut, formatBytes(after))
+		fmt.Println("With the server stopped, replace the original with the compacted copy to use it.")
 	case "get":
 		getCmd.Parse(os.Args[2:])
 		client := initClient(*getAddr)
@@ -150,6 +181,20 @@ func main() {
 		if err := client.Remove(*removeKey); err != nil {
 			log.Fatal(err)
 		}
+	default:
+		fmt.Fprintf(os.Stderr, "unknown subcommand %q\n", os.Args[1])
+		flag.Usage()
+		os.Exit(1)
+	}
+}
+
+func printNames(heading string, names []string) {
+	fmt.Printf("%s:\n", heading)
+	if len(names) == 0 {
+		fmt.Println("  (none)")
+	}
+	for _, name := range names {
+		fmt.Printf("- %s\n", name)
 	}
 }
 

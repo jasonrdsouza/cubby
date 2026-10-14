@@ -50,23 +50,24 @@ sudo systemctl restart cubby
 ```
 
 ### Authenticating
-By default, Cubby stores all of its data in a single [BoltDB](https://github.com/boltdb/bolt) file (canonically called `cubby.db`). Before exposing the service to the world, create an admin. Only admins can write.
+By default, Cubby stores all of its data in a single [BoltDB](https://github.com/etcd-io/bbolt) file (canonically called `cubby.db`). Before exposing the service to the world, create an admin. Only admins can write.
 
 ```bash
-# add an admin (or reset an existing admin's password)
+# add an admin (or reset an existing admin's password), or remove one
 ./bin/cubby addadmin -path data/cubby.db -name username -password password
+./bin/cubby removeadmin -path data/cubby.db -name username
 
 # add a reader key; its secret is generated and printed once
-./bin/cubby addkey -path data/cubby.db -name family
+./bin/cubby addreader -path data/cubby.db -name family
 
 # replace a reader key's secret, invalidating the old one
-./bin/cubby addkey -path data/cubby.db -name family -regenerate
+./bin/cubby addreader -path data/cubby.db -name family -regenerate
+
+# remove a reader key (it is also removed from every blob that lists it)
+./bin/cubby removereader -path data/cubby.db -name family
 
 # list admins and reader keys
-./bin/cubby listusers -path data/cubby.db
-
-# remove an admin or reader key
-./bin/cubby removeuser -path data/cubby.db -name family
+./bin/cubby credentials -path data/cubby.db
 ```
 
 Reader keys can also be managed from the admin page at `/_admin` (admins only, via the browser's Basic Auth prompt), which lists every blob and lets you change who can read it, create, regenerate and delete reader keys, and delete blobs. Admins are managed only from the command line.
@@ -104,6 +105,20 @@ Access is set with the `X-Cubby-Reader` header when writing:
 | *(omitted)* | unchanged for an existing blob; public for a new one |
 
 `public` and `private` are case-insensitive; reader key names are case-sensitive.
+
+
+### Compacting
+The database file never shrinks: space freed by deleting or overwriting blobs is reused for later writes, but the file stays at its largest size. `cubby compact` writes a copy containing only the live data, leaving the original untouched. Swap the files yourself, with the server stopped:
+
+```bash
+sudo systemctl stop cubby
+cubby compact -path /var/data/cubby.db -o /var/data/cubby.compact.db
+mv /var/data/cubby.db /var/data/cubby.db.precompact
+mv /var/data/cubby.compact.db /var/data/cubby.db
+sudo systemctl start cubby
+```
+
+Run it as the user the service runs as, so the new file has the right owner. It needs free disk space for the copy, and refuses to run while the server has the database open. Once Cubby works on the new file, delete `cubby.db.precompact`.
 
 
 ### Running
