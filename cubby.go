@@ -40,6 +40,10 @@ func main() {
 	removeUserDbFile := removeUserCmd.String("path", "cubby.db", "filepath where cubby data is stored")
 	removeUserName := removeUserCmd.String("name", "", "admin or reader key to remove")
 
+	compactCmd := flag.NewFlagSet("compact", flag.ExitOnError)
+	compactDbFile := compactCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	compactOut := compactCmd.String("o", "", "filepath to write the compacted copy to (must not exist)")
+
 	getCmd := flag.NewFlagSet("get", flag.ExitOnError)
 	getAddr := getCmd.String("addr", DEFAULT_ADDR, "cubby server address")
 	getKey := getCmd.String("key", "", "key to get")
@@ -71,6 +75,9 @@ func main() {
 		fmt.Fprint(os.Stderr, " removeuser:\n")
 		removeUserCmd.PrintDefaults()
 
+		fmt.Fprint(os.Stderr, " compact:\n")
+		compactCmd.PrintDefaults()
+
 		fmt.Fprint(os.Stderr, " get:\n")
 		getCmd.PrintDefaults()
 
@@ -82,7 +89,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("Please specify subcommand (serve, listusers, addadmin, addkey, removeuser, get, put, remove)")
+		fmt.Println("Please specify subcommand (serve, listusers, addadmin, addkey, removeuser, compact, get, put, remove)")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -130,6 +137,17 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+	case "compact":
+		compactCmd.Parse(os.Args[2:])
+		if *compactOut == "" {
+			log.Fatal("compact: -o is required")
+		}
+		before, after, err := CompactDB(*compactDbFile, *compactOut)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Compacted %s (%s) into %s (%s).\n", *compactDbFile, formatBytes(before), *compactOut, formatBytes(after))
+		fmt.Println("With the server stopped, replace the original with the compacted copy to use it.")
 	case "get":
 		getCmd.Parse(os.Args[2:])
 		client := initClient(*getAddr)

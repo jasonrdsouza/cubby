@@ -50,6 +50,9 @@ All user commands require direct access to the BoltDB file (the server must be s
 
 # Remove an admin or reader key (also unlists a reader key from every blob)
 ./bin/cubby removeuser -path data/cubby.db -name family
+
+# Write a compacted copy (reclaims space from deleted/overwritten blobs); swap the files yourself
+./bin/cubby compact -path data/cubby.db -o data/cubby.compact.db
 ```
 
 ### Client Commands
@@ -131,7 +134,8 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 **Entry Point (`cubby.go`)**
 - CLI uses flag.NewFlagSet for subcommands
-- Main subcommands: serve, listusers, addadmin, addkey, removeuser, get, put, remove
+- Main subcommands: serve, listusers, addadmin, addkey, removeuser, compact, get, put, remove
+- `compact` (`compact.go`) wraps `bolt.Compact`: it opens the source read-only (so it fails while the server holds the lock) and writes to a new file that must not exist; it never replaces the original
 
 ### Data Storage
 
@@ -157,7 +161,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 ## Important Notes
 
-- **Tests**: HTTP handler tests live in `http_test.go`, `auth_test.go` and `adminpage_test.go` (run with `go test ./...`, or `go test -race ./...`)
+- **Tests**: HTTP handler tests live in `http_test.go`, `auth_test.go` and `adminpage_test.go`, and compaction tests in `compact_test.go` (run with `go test ./...`, or `go test -race ./...`)
 - **Single binary**: Everything compiles into one executable
 - **No TLS**: Cubby does not provide HTTPS - use a reverse proxy (NGINX/Caddy) for production
 - **Gob encoding**: User and metadata structs use Go's gob encoding, which matches fields by name, ignores stored fields the struct lacks, and zero-fills fields the record lacks. Field names must remain consistent, and permission fields must be chosen so their zero value is the least privileged (`Admin: false`, `Public: false`), so records missing them fail closed

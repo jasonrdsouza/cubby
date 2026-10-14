@@ -106,6 +106,20 @@ Access is set with the `X-Cubby-Reader` header when writing:
 `public` and `private` are case-insensitive; reader key names are case-sensitive.
 
 
+### Compacting
+The database file never shrinks: space freed by deleting or overwriting blobs is reused for later writes, but the file stays at its largest size. `cubby compact` writes a copy containing only the live data, leaving the original untouched. Swap the files yourself, with the server stopped:
+
+```bash
+sudo systemctl stop cubby
+cubby compact -path /var/data/cubby.db -o /var/data/cubby.compact.db
+mv /var/data/cubby.db /var/data/cubby.db.precompact
+mv /var/data/cubby.compact.db /var/data/cubby.db
+sudo systemctl start cubby
+```
+
+Run it as the user the service runs as, so the new file has the right owner. It needs free disk space for the copy, and refuses to run while the server has the database open. Once Cubby works on the new file, delete `cubby.db.precompact`.
+
+
 ### Running
 Run the server
 ```bash
