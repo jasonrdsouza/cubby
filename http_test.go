@@ -16,6 +16,8 @@ const (
 	testReader   = "alice"
 	testPassword = "secret"
 	testAdmin    = "root"
+
+	trustedOrigin = "https://trusted.example"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
@@ -37,7 +39,11 @@ func newTestCubby(t *testing.T) (*httptest.Server, *CubbyServer) {
 		t.Fatalf("adding admin: %v", err)
 	}
 	addTestReaderKey(t, cubby, testReader)
-	ts := httptest.NewServer(http.HandlerFunc(cubby.Handler))
+	handler, err := cubby.HTTPHandler([]string{trustedOrigin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts := httptest.NewServer(handler)
 	t.Cleanup(ts.Close)
 	return ts, cubby
 }

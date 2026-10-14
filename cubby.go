@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -20,6 +21,7 @@ func main() {
 	servePort := serveCmd.Int("port", 8383, "port to serve on")
 	serveFile := serveCmd.String("path", "cubby.db", "filepath to store cubby data at")
 	serveMaxSize := serveCmd.Int("max", 10, "max cubby object size in MB")
+	serveTrustedOrigins := serveCmd.String("trusted-origins", "", "comma-separated origins (eg. https://app.example.com) whose pages may make cross-origin writes from a browser")
 
 	listUserCmd := flag.NewFlagSet("listusers", flag.ExitOnError)
 	listUserDbFile := listUserCmd.String("path", "cubby.db", "filepath where cubby data is stored")
@@ -88,7 +90,7 @@ func main() {
 	switch os.Args[1] {
 	case "serve":
 		serveCmd.Parse(os.Args[2:])
-		startServer(*servePort, *serveFile, *serveMaxSize)
+		startServer(*servePort, *serveFile, *serveMaxSize, *serveTrustedOrigins)
 	case "listusers":
 		listUserCmd.Parse(os.Args[2:])
 		cubbyServer := adminServer(*listUserDbFile)
@@ -155,17 +157,24 @@ func adminServer(dbPath string) *CubbyServer {
 	return cubby
 }
 
-func startServer(port int, dbPath string, maxObjectSizeMB int) {
+func startServer(port int, dbPath string, maxObjectSizeMB int, trustedOrigins string) {
 	cubby, err := NewCubbyServer(dbPath, maxObjectSizeMB)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer cubby.Close()
 
-	http.HandleFunc("/", cubby.Handler)
+	var origins []string
+	if trustedOrigins != "" {
+		origins = strings.Split(trustedOrigins, ",")
+	}
+	handler, err := cubby.HTTPHandler(origins)
+	if err != nil {
+		log.Fatal(err)
+	}
 	addr := ":" + strconv.Itoa(port)
 	log.Printf("Starting cubby server on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, nil))
+	log.Fatal(http.ListenAndServe(addr, handler))
 }
 
 func initClient(serverAddr string) *CubbyClient {

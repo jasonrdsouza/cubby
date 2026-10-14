@@ -86,6 +86,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 **HTTP Handler (`http.go`)**
 - Single `Handler` function processes all HTTP requests
+- `HTTPHandler()` wraps it in `http.CrossOriginProtection` (CSRF: browsers resend cached Basic Auth), so browser writes from other origins get 403 unless listed in `serve -trusted-origins`; tests use `HTTPHandler` too
 - Sets CORS headers (`Access-Control-Allow-Origin: *`) on all responses and handles OPTIONS preflight
 - Serves index page at `/` listing the occupied keys the requester can read
 - Serves the embedded JavaScript client at `/client.js`

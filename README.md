@@ -76,6 +76,13 @@ These commands require direct access to the underlying `cubby.db` file, and the 
 
 User auth is accomplished via HTTP basic auth ([hence the need for transport level security](https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication#security_of_basic_authentication)), and so should work with myriad web-native tooling (eg. browsers, curl, httpie, etc).
 
+#### Cross-Site Request Forgery
+Browsers resend Basic Auth credentials automatically, so Cubby rejects writes (POST/DELETE) that a browser makes from a page on another origin, with `403 Forbidden`. Reads, same-origin pages (including Cubby's own UI), and non-browser clients like curl are unaffected. To let a web app on another origin write from the browser, trust its origin explicitly:
+
+```bash
+./bin/cubby serve -path data/cubby.db -trusted-origins https://app.example.com
+```
+
 #### Authorization
 Every blob is either public or private:
 

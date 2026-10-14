@@ -213,3 +213,27 @@ func TestPreMigrationRecordsFailClosed(t *testing.T) {
 		t.Errorf("body = %q", body)
 	}
 }
+
+func TestCrossSiteWritesRejected(t *testing.T) {
+	ts := newTestServer(t)
+	put(t, ts, "k", "v1")
+
+	crossSite := []reqOpt{withAdmin, withHeader("Sec-Fetch-Site", "cross-site"), withHeader("Origin", "https://evil.example")}
+	resp, _ := do(t, ts, http.MethodPost, "k", "evil", crossSite...)
+	expectStatus(t, resp, http.StatusForbidden)
+	resp, _ = do(t, ts, http.MethodDelete, "k", "", crossSite...)
+	expectStatus(t, resp, http.StatusForbidden)
+
+	// cross-origin reads and CORS preflights still work
+	resp, body := do(t, ts, http.MethodGet, "k", "", crossSite...)
+	expectStatus(t, resp, http.StatusOK)
+	if body != "v1" {
+		t.Errorf("body = %q, want v1", body)
+	}
+	resp, _ = do(t, ts, http.MethodOptions, "k", "", crossSite...)
+	expectStatus(t, resp, http.StatusNoContent)
+
+	// same-origin pages and trusted origins may write
+	put(t, ts, "k", "v2", withHeader("Sec-Fetch-Site", "same-origin"))
+	put(t, ts, "k", "v3", withHeader("Sec-Fetch-Site", "cross-site"), withHeader("Origin", trustedOrigin))
+}

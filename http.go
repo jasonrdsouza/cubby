@@ -14,6 +14,22 @@ import (
 
 const allowedMethods = "GET, HEAD, POST, DELETE, OPTIONS"
 
+// HTTPHandler returns the server's handler, guarded against cross-site
+// request forgery. Browsers resend cached Basic Auth credentials on their own,
+// so without this any site could make an admin's browser write or delete.
+// Writes from browser pages on other origins are rejected with 403 unless the
+// origin is in trustedOrigins. Non-browser clients (curl, the Go client) and
+// all reads are unaffected.
+func (c *CubbyServer) HTTPHandler(trustedOrigins []string) (http.Handler, error) {
+	protection := http.NewCrossOriginProtection()
+	for _, origin := range trustedOrigins {
+		if err := protection.AddTrustedOrigin(strings.TrimSpace(origin)); err != nil {
+			return nil, err
+		}
+	}
+	return protection.Handler(http.HandlerFunc(c.Handler)), nil
+}
+
 func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
