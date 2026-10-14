@@ -2,7 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/gob"
+	"errors"
+	"fmt"
+	"slices"
 
 	"github.com/boltdb/bolt"
 )
@@ -12,79 +16,165 @@ func (c *CubbyServer) FetchUser(name string, password string) User {
 		return &AnonymousUser{}
 	}
 
-	var value []byte
+	var user *RegularUser
 	c.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(c.usersBucket))
-		value = b.Get([]byte(name))
+		user = c.getUser(name, tx)
 		return nil
 	})
-
-	decoder := gob.NewDecoder(bytes.NewBuffer(value))
-	var user RegularUser
-	err := decoder.Decode(&user)
-	if err != nil {
-		c.log.Printf("Unable to find user with name: %s. %v", name, err)
+	if user == nil {
+		c.log.Printf("Unable to find user with name: %s", name)
 		return &AnonymousUser{}
 	}
 
 	if user.PasswordMatches(password) {
 		c.log.Printf("Found valid user: %s", user)
-		return &user
+		return user
 	} else {
 		c.log.Printf("Invalid credentials specified for user with name: %s", name)
 		return &AnonymousUser{}
 	}
 }
 
-func (c *CubbyServer) ListUsers() []string {
-	var users []string
-	c.db.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(c.usersBucket))
-		c := b.Cursor()
-		for k, _ := c.First(); k != nil; k, _ = c.Next() {
-			users = append(users, string(k))
-		}
+// getUser returns the stored user with the given name, or nil if there is none.
+func (c *CubbyServer) getUser(name string, tx *bolt.Tx) *RegularUser {
+	value := tx.Bucket([]byte(c.usersBucket)).Get([]byte(name))
+	if value == nil {
 		return nil
+	}
+	var user RegularUser
+	if err := gob.NewDecoder(bytes.NewReader(value)).Decode(&user); err != nil {
+		c.log.Printf("Error decoding user %s: %v", name, err)
+		return nil
+	}
+	return &user
+}
+
+func (c *CubbyServer) putUser(user RegularUser, tx *bolt.Tx) error {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(user); err != nil {
+		return err
+	}
+	return tx.Bucket([]byte(c.usersBucket)).Put([]byte(user.Name()), buf.Bytes())
+}
+
+func (c *CubbyServer) isReaderKey(name string, tx *bolt.Tx) bool {
+	user := c.getUser(name, tx)
+	return user != nil && !user.Admin
+}
+
+func (c *CubbyServer) ListUsers() []RegularUser {
+	var users []RegularUser
+	c.db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket([]byte(c.usersBucket)).ForEach(func(k, _ []byte) error {
+			if user := c.getUser(string(k), tx); user != nil {
+				users = append(users, *user)
+			}
+			return nil
+		})
 	})
 	return users
 }
 
-func (c *CubbyServer) AddUser(name string, password string, isAdmin bool) error {
-	groups := []Group{PublicGroup, UserGroup}
-	if isAdmin {
-		groups = append(groups, AdminGroup)
-	}
-	user := NewUser(name, password, groups)
-
-	var buf bytes.Buffer
-	encoder := gob.NewEncoder(&buf)
-	err := encoder.Encode(user)
-	if err != nil {
-		c.log.Printf("Error encoding new user: %s", name)
+// AddAdmin creates an admin, or resets the password of an existing one.
+func (c *CubbyServer) AddAdmin(name string, password string) error {
+	if err := ValidateCredentialName(name); err != nil {
 		return err
 	}
-
+	if password == "" {
+		return errors.New("admin password must not be empty")
+	}
+	user, err := NewUser(name, password, true)
+	if err != nil {
+		return err
+	}
 	err = c.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(c.usersBucket))
-		return b.Put([]byte(user.Name()), buf.Bytes())
+		if existing := c.getUser(name, tx); existing != nil && !existing.Admin {
+			return fmt.Errorf("%s is already a reader key", name)
+		}
+		return c.putUser(user, tx)
 	})
 
 	if err != nil {
-		c.log.Printf("Error adding user: %s", name)
+		c.log.Printf("Error adding admin %s: %v", name, err)
 	} else {
-		c.log.Printf("Successfully added user: %s", name)
+		c.log.Printf("Successfully added admin: %s", name)
 	}
 	return err
 }
 
-func (c *CubbyServer) RemoveUser(name string) error {
-	err := c.db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket([]byte(c.usersBucket))
-		return b.Delete([]byte(name))
+// AddReaderKey creates a reader key with a generated secret, which it returns.
+func (c *CubbyServer) AddReaderKey(name string) (string, error) {
+	if err := ValidateCredentialName(name); err != nil {
+		return "", err
+	}
+	secret := rand.Text()
+	user, err := NewUser(name, secret, false)
+	if err != nil {
+		return "", err
+	}
+	err = c.db.Update(func(tx *bolt.Tx) error {
+		if c.getUser(name, tx) != nil {
+			return fmt.Errorf("%s already exists", name)
+		}
+		return c.putUser(user, tx)
 	})
 
 	if err != nil {
-		c.log.Printf("Error removing user: %s", name)
+		c.log.Printf("Error adding reader key %s: %v", name, err)
+		return "", err
+	}
+	c.log.Printf("Successfully added reader key: %s", name)
+	return secret, nil
+}
+
+// RegenerateReaderKey replaces a reader key's secret with a generated one,
+// which it returns. The old secret stops working; the key's blobs are kept.
+func (c *CubbyServer) RegenerateReaderKey(name string) (string, error) {
+	secret := rand.Text()
+	user, err := NewUser(name, secret, false)
+	if err != nil {
+		return "", err
+	}
+	err = c.db.Update(func(tx *bolt.Tx) error {
+		if !c.isReaderKey(name, tx) {
+			return fmt.Errorf("no reader key named %s", name)
+		}
+		return c.putUser(user, tx)
+	})
+
+	if err != nil {
+		c.log.Printf("Error regenerating reader key %s: %v", name, err)
+		return "", err
+	}
+	c.log.Printf("Successfully regenerated reader key: %s", name)
+	return secret, nil
+}
+
+// RemoveUser deletes an admin or reader key. A reader key is also removed from
+// every blob that lists it, so a later key of the same name gains no access.
+func (c *CubbyServer) RemoveUser(name string) error {
+	err := c.db.Update(func(tx *bolt.Tx) error {
+		if c.getUser(name, tx) == nil {
+			return fmt.Errorf("no user named %s", name)
+		}
+		if err := tx.Bucket([]byte(c.usersBucket)).Delete([]byte(name)); err != nil {
+			return err
+		}
+		for _, key := range c.List(tx) {
+			metadata := c.GetMetadata(key, tx)
+			if !slices.Contains(metadata.ReaderKeys, name) {
+				continue
+			}
+			metadata.ReaderKeys = slices.DeleteFunc(metadata.ReaderKeys, func(k string) bool { return k == name })
+			if err := c.PutMetadata(key, metadata, tx); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.log.Printf("Error removing user %s: %v", name, err)
 	} else {
 		c.log.Printf("Successfully removed user: %s", name)
 	}

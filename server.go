@@ -6,7 +6,7 @@ import (
 	"fmt"
 	htmltemplate "html/template"
 	"log"
-	"text/template"
+	"net/http"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -24,8 +24,10 @@ type CubbyServer struct {
 	db             *bolt.DB
 	maxObjectSize  int64
 	log            *log.Logger
-	indexTemplate  *template.Template
+	indexTemplate  *htmltemplate.Template
 	viewerTemplate *htmltemplate.Template
+	adminTemplate  *htmltemplate.Template
+	adminMux       *http.ServeMux
 }
 
 func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error) {
@@ -38,7 +40,9 @@ func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error
 		log:            log.Default(),
 		indexTemplate:  IndexTemplate(),
 		viewerTemplate: ViewerTemplate(),
+		adminTemplate:  AdminTemplate(),
 	}
+	server.adminMux = server.newAdminMux()
 
 	db, err := bolt.Open(server.filename, 0600, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
@@ -199,6 +203,20 @@ func (c *CubbyServer) RemoveAtomic(key string) error {
 		c.log.Printf("Successfully removed key: %s", key)
 	}
 	return err
+}
+
+// Exists reports whether key holds a blob (its data or its metadata).
+func (c *CubbyServer) Exists(key string, tx *bolt.Tx) bool {
+	return tx.Bucket([]byte(c.dataBucket)).Get([]byte(key)) != nil ||
+		tx.Bucket([]byte(c.metaBucket)).Get([]byte(key)) != nil
+}
+
+// Delete removes a blob: its data and its metadata.
+func (c *CubbyServer) Delete(key string, tx *bolt.Tx) error {
+	if err := c.Remove(key, tx); err != nil {
+		return err
+	}
+	return c.RemoveMetadata(key, tx)
 }
 
 func (c *CubbyServer) Remove(key string, tx *bolt.Tx) error {

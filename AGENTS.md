@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Cubby is a simple, web-native object store written in Go. It provides a REST API for storing and retrieving arbitrary data (JSON, binary files, images, etc.) with basic authentication and authorization. All data is persisted in a single BoltDB file.
+Cubby is a simple, web-native object store written in Go. It provides a REST API for storing and retrieving arbitrary data (JSON, binary files, images, etc.) with Basic Auth: public blobs, private blobs readable by per-blob reader keys, and admins who are the only writers. All data is persisted in a single BoltDB file.
 
 ## Development Commands
 
@@ -36,20 +36,20 @@ Default port is 8383. Access the UI at http://localhost:8383/
 
 ### User Management
 
-All user commands require direct access to the BoltDB file:
+All user commands require direct access to the BoltDB file (the server must be stopped):
 
 ```bash
-# Add regular user
-./bin/cubby adduser -path data/cubby.db -name username -password password
+# Add admin (or reset an admin's password)
+./bin/cubby addadmin -path data/cubby.db -name username -password password
 
-# Add admin user
-./bin/cubby adduser -path data/cubby.db -name username -password password -admin
+# Add reader key (prints its generated secret once); -regenerate replaces the secret
+./bin/cubby addkey -path data/cubby.db -name family
 
-# List users
+# List admins and reader keys
 ./bin/cubby listusers -path data/cubby.db
 
-# Remove user
-./bin/cubby removeuser -path data/cubby.db -name username
+# Remove an admin or reader key (also unlists a reader key from every blob)
+./bin/cubby removeuser -path data/cubby.db -name family
 ```
 
 ### Client Commands
@@ -86,29 +86,34 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 **HTTP Handler (`http.go`)**
 - Single `Handler` function processes all HTTP requests
+- `HTTPHandler()` wraps it in `http.CrossOriginProtection` (CSRF: browsers resend cached Basic Auth), so browser writes from other origins get 403 unless listed in `serve -trusted-origins`; tests use `HTTPHandler` too
 - Sets CORS headers (`Access-Control-Allow-Origin: *`) on all responses and handles OPTIONS preflight
-- Serves index page at `/` showing all occupied keys
+- Serves index page at `/` listing all occupied keys to everyone, private ones included (key names are public; contents are not)
 - Serves the embedded JavaScript client at `/client.js`
 - All other paths are treated as keys: `/:key`
 - Supports GET, HEAD, POST (for writes), DELETE methods
 - Raw GETs are served via `http.ServeContent` with a strong ETag derived from `metadata.UpdatedAt` (`CubbyMetadata.ETag()`), so conditional GETs and Range work; themed views get no ETag
 - POST/DELETE honor `If-Match` / `If-None-Match` (`preconditions.go`), evaluated after auth and inside the same bolt Update transaction as the write
-- Enforces authorization on every operation based on metadata
+- Reads are checked with `User.CanRead(metadata)`; POST/DELETE require `User.IsAdmin()`
 
-**Authentication & Authorization (`users.go`, `metadata.go`)**
+**Authentication & Authorization (`users.go`, `admin.go`, `metadata.go`)**
 - HTTP Basic Auth for all authenticated operations
-- Three user groups: Admin, User, Public (defined in `users.go:22-26` - DO NOT reorder these constants)
-- Passwords are bcrypt-hashed with cost 8
-- Two types: `RegularUser` (authenticated) and `AnonymousUser` (unauthenticated)
-- Admins can access everything; regular users can read/write non-admin content; public can only read public content
-- Authorization is controlled per-object via custom headers:
-  - `X-Cubby-Reader`: sets who can read (admin/user/public)
-  - `X-Cubby-Writer`: sets who can write (admin/user)
+- Stored credentials (`RegularUser`, users bucket) are either admins (`Admin: true`) or reader keys (`Admin: false`)
+- Passwords are bcrypt-hashed with cost 8; reader key secrets are generated (`crypto/rand.Text`)
+- Unauthenticated requests (or bad credentials) get an `AnonymousUser`
+- Admins read and write everything; reader keys read public blobs and private blobs that list them; anonymous reads public blobs only. Only admins write or delete
+- Per-blob read access is set with the `X-Cubby-Reader` header on POST: `public`, `private` (admins only), or a comma-separated list of reader key names (validated against existing reader keys). Omitted keeps the existing access, or public for a new blob
+- `RemoveUser` also strips a removed reader key from every blob's `ReaderKeys`, so a recreated key of the same name inherits nothing
 
 **Metadata (`metadata.go`)**
-- Each key has associated metadata: ContentType, UpdatedAt, Readers group, Writers group
-- Defaults: public reads, authenticated-user writes
+- Each key has associated metadata: ContentType, UpdatedAt, Public, ReaderKeys
 - Metadata is stored separately from data using gob encoding
+
+**Admin Page (`adminpage.go`, `admin.html`)**
+- Served under the reserved `/_admin` prefix (`isAdminPath`); every request there requires an admin (401 + Basic Auth challenge otherwise) and is routed by `adminMux`, a method-pattern `http.ServeMux`
+- Plain HTML forms, no JS beyond `confirm()`: create/regenerate/delete reader keys, change a blob's access (`SetAccess`, which leaves content and ETag untouched), delete blobs. Admins are CLI-only
+- Successful actions 303 back to `/_admin`; a generated secret is rendered directly (never in a URL) with `Cache-Control: no-store`
+- CSRF is covered by `HTTPHandler`'s `CrossOriginProtection`
 
 **Go Client (`client.go`)**
 - Simple HTTP client for programmatic access from Go
@@ -126,7 +131,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 **Entry Point (`cubby.go`)**
 - CLI uses flag.NewFlagSet for subcommands
-- Main subcommands: serve, listusers, adduser, removeuser, get, put, remove
+- Main subcommands: serve, listusers, addadmin, addkey, removeuser, get, put, remove
 
 ### Data Storage
 
@@ -143,18 +148,16 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 2. **Authorization Flow**:
    - User authenticated via HTTP Basic Auth → `FetchUser()` returns `User` interface
-   - Metadata retrieved for the key
-   - `User.InGroup(metadata.Readers/Writers)` checks permission
-   - Admins always pass group checks (see `users.go:87-94`)
+   - Reads: metadata retrieved for the key, `User.CanRead(metadata)` checks permission
+   - Writes: `User.IsAdmin()`, checked before the body is read
 
 3. **Web-Native**: The server serves content with proper Content-Type headers, making objects directly accessible in browsers. Special case: uploading `favicon.ico` makes it the site favicon.
 
-4. **Reserved Paths**: `/` (index page) and `/client.js` (JavaScript client) are special-cased in the handler and cannot be used as storage keys.
+4. **Reserved Paths**: `/` (index page), `/client.js` (JavaScript client), `/vendor/*` assets and `/_admin` (plus everything under `/_admin/`) are special-cased in the handler and cannot be used as storage keys.
 
 ## Important Notes
 
 - **Tests**: HTTP handler tests live in `http_test.go` (run with `go test ./...`). `-race` needs `-gcflags=all=-d=checkptr=0` because boltdb v1.3.1 trips checkptr
 - **Single binary**: Everything compiles into one executable
 - **No TLS**: Cubby does not provide HTTPS - use a reverse proxy (NGINX/Caddy) for production
-- **Group enum order**: The `Group` constants in `users.go:22-26` must never be reordered as the enum values are stored in the database
-- **Gob encoding**: User and metadata structs use Go's gob encoding, so field names must remain consistent for backward compatibility
+- **Gob encoding**: User and metadata structs use Go's gob encoding, which matches fields by name, ignores stored fields the struct lacks, and zero-fills fields the record lacks. Field names must remain consistent, and permission fields must be chosen so their zero value is the least privileged (`Admin: false`, `Public: false`), so records missing them fail closed

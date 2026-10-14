@@ -3,7 +3,7 @@ package main
 import (
 	_ "embed"
 	htmltemplate "html/template"
-	"text/template"
+	"slices"
 )
 
 //go:embed index.html
@@ -11,6 +11,9 @@ var indexFile string
 
 //go:embed js-client/cubby-client.js
 var clientJS string
+
+//go:embed admin.html
+var adminFile string
 
 //go:embed viewer.html
 var viewerFile string
@@ -42,8 +45,8 @@ var diff2htmlJS string
 //go:embed static/diff2html.min.css
 var diff2htmlCSS string
 
-func IndexTemplate() *template.Template {
-	indexTemplate, err := template.New("index").Parse(indexFile)
+func IndexTemplate() *htmltemplate.Template {
+	indexTemplate, err := htmltemplate.New("index").Parse(indexFile)
 	if err != nil {
 		panic(err)
 	}
@@ -56,4 +59,9 @@ func ViewerTemplate() *htmltemplate.Template {
 		panic(err)
 	}
 	return viewerTemplate
+}
+
+func AdminTemplate() *htmltemplate.Template {
+	funcs := htmltemplate.FuncMap{"contains": slices.Contains[[]string]}
+	return htmltemplate.Must(htmltemplate.New("admin").Funcs(funcs).Parse(adminFile))
 }
