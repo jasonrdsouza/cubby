@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -186,29 +185,22 @@ func TestAdminPasswordLength(t *testing.T) {
 	}
 }
 
-func TestIndexListsOnlyReadableKeys(t *testing.T) {
+// Key names are public, like labels on cubbies; only contents are protected.
+func TestIndexListsAllKeys(t *testing.T) {
 	ts := newTestServer(t)
 	put(t, ts, "pub-blob", "v")
 	put(t, ts, "alice-blob", "v", withHeader(CUBBY_READER_HEADER, testReader))
 	put(t, ts, "admin-blob", "v", withHeader(CUBBY_READER_HEADER, "private"))
 
-	cases := []struct {
-		who  string
-		auth []reqOpt
-		want []string
-	}{
-		{"anonymous", nil, []string{"pub-blob"}},
-		{"alice", []reqOpt{withReader}, []string{"pub-blob", "alice-blob"}},
-		{"admin", []reqOpt{withAdmin}, []string{"pub-blob", "alice-blob", "admin-blob"}},
-	}
-	for _, tc := range cases {
-		_, body := do(t, ts, http.MethodGet, "", "", tc.auth...)
-		for _, key := range []string{"pub-blob", "alice-blob", "admin-blob"} {
-			if listed, want := strings.Contains(body, key), slices.Contains(tc.want, key); listed != want {
-				t.Errorf("%s index lists %s = %v, want %v", tc.who, key, listed, want)
-			}
+	resp, body := do(t, ts, http.MethodGet, "", "")
+	expectStatus(t, resp, http.StatusOK)
+	for _, key := range []string{"pub-blob", "alice-blob", "admin-blob"} {
+		if !strings.Contains(body, key) {
+			t.Errorf("anonymous index missing %s", key)
 		}
 	}
+	resp, _ = do(t, ts, http.MethodGet, "alice-blob", "")
+	expectStatus(t, resp, http.StatusUnauthorized)
 }
 
 // Records written before the reader-key model must decode with the least

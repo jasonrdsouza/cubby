@@ -225,17 +225,14 @@ func (c *CubbyServer) Remove(key string, tx *bolt.Tx) error {
 	return err
 }
 
-// ListReadable returns the keys whose blobs user can read.
-func (c *CubbyServer) ListReadable(user User) []string {
-	keys := []string{}
+func (c *CubbyServer) ListAtomic() []string {
+	var keys []string
 	c.db.View(func(tx *bolt.Tx) error {
-		for _, key := range c.List(tx) {
-			if user.CanRead(c.GetMetadata(key, tx)) {
-				keys = append(keys, key)
-			}
-		}
+		keys = c.List(tx)
 		return nil
 	})
+
+	c.log.Printf("Successfully listed keys")
 	return keys
 }
 

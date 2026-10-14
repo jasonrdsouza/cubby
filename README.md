@@ -112,7 +112,7 @@ Run the server
 ./bin/cubby-darwin serve -path data/cubby.db
 ```
 
-Navigate to http://localhost:8383/ to view the Cubby UI, which lists the "occupied" cubbies you can read (send credentials to see private ones), as well as the version of Cubby that is running.
+Navigate to http://localhost:8383/ to view the Cubby UI, which lists all "occupied" cubbies (private ones too: anyone can see a cubby's name, but reading its contents needs access), as well as the version of Cubby that is running.
 
 Put JSON data (using [httpie](https://httpie.io/)), specifying admin credentials since writes are limited to admins
 ```bash

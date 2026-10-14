@@ -56,14 +56,15 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path == "" || r.URL.Path == "/" {
 		log.Println("Serving index page")
-		// index page shows a list of the occupied cubbies (ie. active keys)
-		// that the requester can read
+		// index page shows a list of occupied cubbies (ie. active keys). Like
+		// real cubbies, anyone can see which are occupied; reading a private
+		// one's contents still needs a reader key or admin
 		tmplData := struct {
 			Keys         []string
 			Version      string
 			ShortVersion string
 		}{
-			Keys:         c.ListReadable(user),
+			Keys:         c.ListAtomic(),
 			Version:      c.Version(),
 			ShortVersion: c.ShortVersion(),
 		}
