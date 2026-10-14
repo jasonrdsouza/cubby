@@ -53,20 +53,21 @@ sudo systemctl restart cubby
 By default, Cubby stores all of its data in a single [BoltDB](https://github.com/etcd-io/bbolt) file (canonically called `cubby.db`). Before exposing the service to the world, create an admin. Only admins can write.
 
 ```bash
-# add an admin (or reset an existing admin's password)
+# add an admin (or reset an existing admin's password), or remove one
 ./bin/cubby addadmin -path data/cubby.db -name username -password password
+./bin/cubby removeadmin -path data/cubby.db -name username
 
 # add a reader key; its secret is generated and printed once
-./bin/cubby addkey -path data/cubby.db -name family
+./bin/cubby addreader -path data/cubby.db -name family
 
 # replace a reader key's secret, invalidating the old one
-./bin/cubby addkey -path data/cubby.db -name family -regenerate
+./bin/cubby addreader -path data/cubby.db -name family -regenerate
+
+# remove a reader key (it is also removed from every blob that lists it)
+./bin/cubby removereader -path data/cubby.db -name family
 
 # list admins and reader keys
-./bin/cubby listusers -path data/cubby.db
-
-# remove an admin or reader key
-./bin/cubby removeuser -path data/cubby.db -name family
+./bin/cubby credentials -path data/cubby.db
 ```
 
 Reader keys can also be managed from the admin page at `/_admin` (admins only, via the browser's Basic Auth prompt), which lists every blob and lets you change who can read it, create, regenerate and delete reader keys, and delete blobs. Admins are managed only from the command line.

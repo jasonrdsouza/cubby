@@ -75,17 +75,7 @@ func (c *CubbyServer) renderNewSecret(w http.ResponseWriter, name, secret string
 }
 
 func (c *CubbyServer) adminDeleteKey(w http.ResponseWriter, r *http.Request) {
-	name := r.PostFormValue("name")
-	err := c.db.View(func(tx *bolt.Tx) error {
-		if !c.isReaderKey(name, tx) {
-			return fmt.Errorf("no reader key named %s", name)
-		}
-		return nil
-	})
-	if err == nil {
-		err = c.RemoveUser(name)
-	}
-	c.redirectOrError(w, r, err)
+	c.redirectOrError(w, r, c.RemoveReaderKey(r.PostFormValue("name")))
 }
 
 func (c *CubbyServer) adminSetAccess(w http.ResponseWriter, r *http.Request) {
@@ -162,7 +152,7 @@ func (c *CubbyServer) renderAdminPage(w http.ResponseWriter, status int, notice 
 	}{adminNotice: notice, Version: c.Version(), ShortVersion: c.ShortVersion()}
 
 	keyIndex := map[string]int{}
-	for _, user := range c.ListUsers() {
+	for _, user := range c.ListCredentials() {
 		if user.Admin {
 			data.Admins = append(data.Admins, user.Name())
 			continue

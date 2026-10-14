@@ -62,7 +62,8 @@ func (c *CubbyServer) isReaderKey(name string, tx *bolt.Tx) bool {
 	return user != nil && !user.Admin
 }
 
-func (c *CubbyServer) ListUsers() []RegularUser {
+// ListCredentials returns every admin and reader key.
+func (c *CubbyServer) ListCredentials() []RegularUser {
 	var users []RegularUser
 	c.db.View(func(tx *bolt.Tx) error {
 		return tx.Bucket([]byte(c.usersBucket)).ForEach(func(k, _ []byte) error {
@@ -150,12 +151,29 @@ func (c *CubbyServer) RegenerateReaderKey(name string) (string, error) {
 	return secret, nil
 }
 
-// RemoveUser deletes an admin or reader key. A reader key is also removed from
-// every blob that lists it, so a later key of the same name gains no access.
-func (c *CubbyServer) RemoveUser(name string) error {
+// RemoveAdmin deletes an admin.
+func (c *CubbyServer) RemoveAdmin(name string) error {
 	err := c.db.Update(func(tx *bolt.Tx) error {
-		if c.getUser(name, tx) == nil {
-			return fmt.Errorf("no user named %s", name)
+		if user := c.getUser(name, tx); user == nil || !user.Admin {
+			return fmt.Errorf("no admin named %s", name)
+		}
+		return tx.Bucket([]byte(c.usersBucket)).Delete([]byte(name))
+	})
+
+	if err != nil {
+		c.log.Printf("Error removing admin %s: %v", name, err)
+	} else {
+		c.log.Printf("Successfully removed admin: %s", name)
+	}
+	return err
+}
+
+// RemoveReaderKey deletes a reader key and removes it from every blob that
+// lists it, so a later key of the same name gains no access.
+func (c *CubbyServer) RemoveReaderKey(name string) error {
+	err := c.db.Update(func(tx *bolt.Tx) error {
+		if !c.isReaderKey(name, tx) {
+			return fmt.Errorf("no reader key named %s", name)
 		}
 		if err := tx.Bucket([]byte(c.usersBucket)).Delete([]byte(name)); err != nil {
 			return err
@@ -174,9 +192,9 @@ func (c *CubbyServer) RemoveUser(name string) error {
 	})
 
 	if err != nil {
-		c.log.Printf("Error removing user %s: %v", name, err)
+		c.log.Printf("Error removing reader key %s: %v", name, err)
 	} else {
-		c.log.Printf("Successfully removed user: %s", name)
+		c.log.Printf("Successfully removed reader key: %s", name)
 	}
 	return err
 }
