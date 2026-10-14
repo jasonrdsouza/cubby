@@ -25,15 +25,24 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	username, password, ok := r.BasicAuth()
+	if !ok {
+		// set empty username and password to fetch AnonymousUser
+		username = ""
+		password = ""
+	}
+	user := c.FetchUser(username, password)
+
 	if r.URL.Path == "" || r.URL.Path == "/" {
 		log.Println("Serving index page")
-		// index page shows a list of occupied cubbies (ie. active keys)
+		// index page shows a list of the occupied cubbies (ie. active keys)
+		// that the requester can read
 		tmplData := struct {
 			Keys         []string
 			Version      string
 			ShortVersion string
 		}{
-			Keys:         c.ListAtomic(),
+			Keys:         c.ListReadable(user),
 			Version:      c.Version(),
 			ShortVersion: c.ShortVersion(),
 		}
@@ -106,21 +115,15 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := r.URL.Path[1:]
-	username, password, ok := r.BasicAuth()
-	if !ok {
-		// set empty username and password to fetch AnonymousUser
-		username = ""
-		password = ""
-	}
-	user := c.FetchUser(username, password)
 
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
 		c.db.View(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
 			log.Printf("Fetched metadata for key %s: %s", key, metadata)
 
-			// auth check: reader allowlist
-			if !user.InGroup(metadata.Readers) {
+			// auth check: public, admin, or a listed reader key. Missing keys
+			// are private, so only admins can tell them apart from forbidden ones
+			if !user.CanRead(metadata) {
 				log.Println("Unauthorized read attempt")
 				w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
 				http.Error(w, "Unauthorized Reader", http.StatusUnauthorized)
@@ -150,7 +153,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				// private: only the end user's own cache (e.g. the browser) may
 				// store it, never a shared proxy/CDN, which could otherwise serve
 				// a restricted object without cubby's reader check running.
-				if metadata.Readers == PublicGroup {
+				if metadata.Public {
 					w.Header().Set("Cache-Control", "no-cache")
 				} else {
 					w.Header().Set("Cache-Control", "private, no-cache")
@@ -164,17 +167,24 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			return nil
 		})
 	} else if r.Method == http.MethodPost {
-		// auth check: disallow public writes
-		if _, ok := user.(*AnonymousUser); ok {
+		// auth check: only admins write
+		if !user.IsAdmin() {
 			log.Println("Unauthorized write attempt")
 			w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
 			http.Error(w, "Unauthorized Writer", http.StatusUnauthorized)
 			return
 		}
 
+		readerHeader := r.Header.Get(CUBBY_READER_HEADER)
+		public, readerKeys, err := ParseAccess(readerHeader)
+		if readerHeader != "" && err != nil {
+			http.Error(w, "Invalid "+CUBBY_READER_HEADER+": "+err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		var b bytes.Buffer
 		r.Body = http.MaxBytesReader(w, r.Body, c.maxObjectSize)
-		_, err := b.ReadFrom(r.Body)
+		_, err = b.ReadFrom(r.Body)
 		if err != nil {
 			log.Printf("Error reading uploaded data: %v", err)
 			http.Error(w, "Could not read data", http.StatusInternalServerError)
@@ -187,16 +197,15 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		err = c.db.Update(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
 
-			// auth check: writer allowlist
-			if !metadata.Empty() && !user.InGroup(metadata.Writers) {
-				log.Println("Unauthorized overwrite attempt")
-				w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
-				http.Error(w, "Unauthorized Overwrite", http.StatusUnauthorized)
+			if !c.checkWritePreconditions(w, r, key, metadata, tx) {
 				return nil
 			}
 
-			if !c.checkWritePreconditions(w, r, key, metadata, tx) {
-				return nil
+			for _, name := range readerKeys {
+				if !c.isReaderKey(name, tx) {
+					http.Error(w, "Unknown reader key: "+name, http.StatusBadRequest)
+					return nil
+				}
 			}
 
 			err := c.Put(key, b.Bytes(), tx)
@@ -204,8 +213,12 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				return err
 			}
 
-			metadata.UpdateReaders(StringToGroup(r.Header.Get(CUBBY_READER_HEADER)))
-			metadata.UpdateWriters(StringToGroup(r.Header.Get(CUBBY_WRITER_HEADER)))
+			if readerHeader != "" {
+				metadata.SetAccess(public, readerKeys)
+			} else if metadata.Empty() {
+				// new blobs default to public; existing ones keep their access
+				metadata.SetAccess(true, nil)
+			}
 			metadata.SetContentType(r.Header.Get("Content-Type"))
 			metadata.MarkUpdated()
 			if err := c.PutMetadata(key, metadata, tx); err != nil {
@@ -223,8 +236,8 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("ETag", newETag)
 		}
 	} else if r.Method == http.MethodDelete {
-		// auth check: disallow public deletes
-		if _, ok := user.(*AnonymousUser); ok {
+		// auth check: only admins delete
+		if !user.IsAdmin() {
 			log.Println("Unauthorized delete attempt")
 			w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
 			http.Error(w, "Unauthorized Writer", http.StatusUnauthorized)
@@ -234,15 +247,6 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 		responded := false
 		err := c.db.Update(func(tx *bolt.Tx) error {
 			metadata := c.GetMetadata(key, tx)
-
-			// auth check: writer allowlist
-			if !user.InGroup(metadata.Writers) {
-				log.Println("Unauthorized delete attempt")
-				w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
-				http.Error(w, "Unauthorized Writer", http.StatusUnauthorized)
-				responded = true
-				return nil
-			}
 
 			if !c.checkWritePreconditions(w, r, key, metadata, tx) {
 				responded = true

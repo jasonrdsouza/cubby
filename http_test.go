@@ -13,35 +13,56 @@ import (
 )
 
 const (
-	testUser     = "alice"
+	testReader   = "alice"
 	testPassword = "secret"
 	testAdmin    = "root"
 )
 
 func newTestServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	ts, _ := newTestCubby(t)
+	return ts
+}
+
+// newTestCubby starts a server with an admin (testAdmin) and a reader key
+// (testReader), both with password testPassword.
+func newTestCubby(t *testing.T) (*httptest.Server, *CubbyServer) {
+	t.Helper()
 	cubby, err := NewCubbyServer(filepath.Join(t.TempDir(), "cubby.db"), 10)
 	if err != nil {
 		t.Fatalf("creating cubby server: %v", err)
 	}
 	t.Cleanup(cubby.Close)
-	if err := cubby.AddUser(testUser, testPassword, false); err != nil {
-		t.Fatalf("adding user: %v", err)
-	}
-	if err := cubby.AddUser(testAdmin, testPassword, true); err != nil {
+	if err := cubby.AddAdmin(testAdmin, testPassword); err != nil {
 		t.Fatalf("adding admin: %v", err)
 	}
+	addTestReaderKey(t, cubby, testReader)
 	ts := httptest.NewServer(http.HandlerFunc(cubby.Handler))
 	t.Cleanup(ts.Close)
-	return ts
+	return ts, cubby
+}
+
+// addTestReaderKey stores a reader key with the known password testPassword,
+// rather than the generated secret AddReaderKey would assign.
+func addTestReaderKey(t *testing.T, cubby *CubbyServer, name string) {
+	t.Helper()
+	err := cubby.db.Update(func(tx *bolt.Tx) error {
+		return cubby.putUser(NewUser(name, testPassword, false), tx)
+	})
+	if err != nil {
+		t.Fatalf("adding reader key: %v", err)
+	}
 }
 
 type reqOpt func(*http.Request)
 
-func withAuth(r *http.Request) { r.SetBasicAuth(testUser, testPassword) }
-
-// withAdmin is used to observe missing keys, which only admins can read.
 func withAdmin(r *http.Request) { r.SetBasicAuth(testAdmin, testPassword) }
+
+func withReader(r *http.Request) { r.SetBasicAuth(testReader, testPassword) }
+
+func withBasicAuth(name, password string) reqOpt {
+	return func(r *http.Request) { r.SetBasicAuth(name, password) }
+}
 
 func withHeader(name, value string) reqOpt {
 	return func(r *http.Request) { r.Header.Set(name, value) }
@@ -72,10 +93,10 @@ func do(t *testing.T, ts *httptest.Server, method, key, body string, opts ...req
 	return resp, string(b)
 }
 
-// put stores value at key as an authenticated user and returns the new ETag.
+// put stores value at key as an admin and returns the new ETag.
 func put(t *testing.T, ts *httptest.Server, key, value string, opts ...reqOpt) string {
 	t.Helper()
-	opts = append([]reqOpt{withAuth, withHeader("Content-Type", "application/octet-stream")}, opts...)
+	opts = append([]reqOpt{withAdmin, withHeader("Content-Type", "application/octet-stream")}, opts...)
 	resp, _ := do(t, ts, http.MethodPost, key, value, opts...)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("POST %s: status %d", key, resp.StatusCode)
@@ -155,7 +176,7 @@ func TestPostChangesETag(t *testing.T) {
 
 func TestPrivateKeyNeverRevealsNotModified(t *testing.T) {
 	ts := newTestServer(t)
-	etag := put(t, ts, "secret", "private data", withHeader(CUBBY_READER_HEADER, "user"))
+	etag := put(t, ts, "secret", "private data", withHeader(CUBBY_READER_HEADER, testReader))
 
 	resp, _ := do(t, ts, http.MethodGet, "secret", "", withHeader("If-None-Match", etag))
 	expectStatus(t, resp, http.StatusUnauthorized)
@@ -163,7 +184,7 @@ func TestPrivateKeyNeverRevealsNotModified(t *testing.T) {
 		t.Error("unauthorized response leaked ETag")
 	}
 
-	resp, body := do(t, ts, http.MethodGet, "secret", "", withAuth)
+	resp, body := do(t, ts, http.MethodGet, "secret", "", withReader)
 	expectStatus(t, resp, http.StatusOK)
 	if got := resp.Header.Get("Cache-Control"); got != "private, no-cache" {
 		t.Errorf("Cache-Control = %q, want private, no-cache", got)
@@ -211,7 +232,7 @@ func TestThemedViewHasNoETagAndVariesOnAccept(t *testing.T) {
 func TestHead(t *testing.T) {
 	ts := newTestServer(t)
 	etag := put(t, ts, "photoframe", "image bytes")
-	put(t, ts, "secret", "private", withHeader(CUBBY_READER_HEADER, "user"))
+	put(t, ts, "secret", "private", withHeader(CUBBY_READER_HEADER, "private"))
 
 	getResp, _ := do(t, ts, http.MethodGet, "photoframe", "")
 	headResp, body := do(t, ts, http.MethodHead, "photoframe", "")
@@ -234,7 +255,7 @@ func TestHead(t *testing.T) {
 
 func TestUnsupportedMethod(t *testing.T) {
 	ts := newTestServer(t)
-	resp, _ := do(t, ts, http.MethodPut, "photoframe", "x", withAuth)
+	resp, _ := do(t, ts, http.MethodPut, "photoframe", "x", withAdmin)
 	expectStatus(t, resp, http.StatusMethodNotAllowed)
 	allow := resp.Header.Get("Allow")
 	for _, m := range []string{"GET", "HEAD", "POST", "DELETE"} {
@@ -249,7 +270,7 @@ func TestPostIfMatch(t *testing.T) {
 	stale := put(t, ts, "k", "v1")
 	current := put(t, ts, "k", "v2", withHeader("If-Match", stale))
 
-	resp, _ := do(t, ts, http.MethodPost, "k", "v3", withAuth, withHeader("If-Match", stale))
+	resp, _ := do(t, ts, http.MethodPost, "k", "v3", withAdmin, withHeader("If-Match", stale))
 	expectStatus(t, resp, http.StatusPreconditionFailed)
 	if got := resp.Header.Get("ETag"); got != current {
 		t.Errorf("412 ETag = %q, want current %q", got, current)
@@ -261,7 +282,7 @@ func TestPostIfMatch(t *testing.T) {
 	}
 
 	// a weak tag never matches under strong comparison
-	resp, _ = do(t, ts, http.MethodPost, "k", "v3", withAuth, withHeader("If-Match", "W/"+current))
+	resp, _ = do(t, ts, http.MethodPost, "k", "v3", withAdmin, withHeader("If-Match", "W/"+current))
 	expectStatus(t, resp, http.StatusPreconditionFailed)
 
 	// any tag in a list may match
@@ -272,7 +293,7 @@ func TestPostIfNoneMatchStar(t *testing.T) {
 	ts := newTestServer(t)
 	put(t, ts, "existing", "v1")
 
-	resp, _ := do(t, ts, http.MethodPost, "existing", "v2", withAuth, withHeader("If-None-Match", "*"))
+	resp, _ := do(t, ts, http.MethodPost, "existing", "v2", withAdmin, withHeader("If-None-Match", "*"))
 	expectStatus(t, resp, http.StatusPreconditionFailed)
 	if resp.Header.Get("ETag") == "" {
 		t.Error("412 missing current ETag")
@@ -283,7 +304,7 @@ func TestPostIfNoneMatchStar(t *testing.T) {
 
 func TestPostIfMatchStar(t *testing.T) {
 	ts := newTestServer(t)
-	resp, _ := do(t, ts, http.MethodPost, "missing", "v1", withAuth, withHeader("If-Match", "*"))
+	resp, _ := do(t, ts, http.MethodPost, "missing", "v1", withAdmin, withHeader("If-Match", "*"))
 	expectStatus(t, resp, http.StatusPreconditionFailed)
 	if resp.Header.Get("ETag") != "" {
 		t.Error("412 for missing key should not carry an ETag")
@@ -300,7 +321,7 @@ func TestDeleteIfMatch(t *testing.T) {
 	stale := put(t, ts, "k", "v1")
 	current := put(t, ts, "k", "v2")
 
-	resp, _ := do(t, ts, http.MethodDelete, "k", "", withAuth, withHeader("If-Match", stale))
+	resp, _ := do(t, ts, http.MethodDelete, "k", "", withAdmin, withHeader("If-Match", stale))
 	expectStatus(t, resp, http.StatusPreconditionFailed)
 	if got := resp.Header.Get("ETag"); got != current {
 		t.Errorf("412 ETag = %q, want %q", got, current)
@@ -311,7 +332,7 @@ func TestDeleteIfMatch(t *testing.T) {
 		t.Errorf("body = %q, want v2", body)
 	}
 
-	resp, _ = do(t, ts, http.MethodDelete, "k", "", withAuth, withHeader("If-Match", current))
+	resp, _ = do(t, ts, http.MethodDelete, "k", "", withAdmin, withHeader("If-Match", current))
 	expectStatus(t, resp, http.StatusOK)
 	resp, _ = do(t, ts, http.MethodGet, "k", "", withAdmin)
 	expectStatus(t, resp, http.StatusNotFound)
@@ -328,9 +349,10 @@ func TestUnauthenticatedConditionalWriteIs401(t *testing.T) {
 	resp, _ = do(t, ts, http.MethodDelete, "k", "", withHeader("If-Match", `"stale"`))
 	expectStatus(t, resp, http.StatusUnauthorized)
 
-	// authenticated but not in the writer group: still 401, never 412
-	put(t, ts, "admin-only", "v1", withHeader(CUBBY_WRITER_HEADER, "admin"))
-	resp, _ = do(t, ts, http.MethodPost, "admin-only", "v2", withAuth, withHeader("If-Match", `"stale"`))
+	// a valid reader key is not a writer: still 401, never 412
+	resp, _ = do(t, ts, http.MethodPost, "k", "v2", withReader, withHeader("If-Match", `"stale"`))
+	expectStatus(t, resp, http.StatusUnauthorized)
+	resp, _ = do(t, ts, http.MethodDelete, "k", "", withReader, withHeader("If-Match", `"stale"`))
 	expectStatus(t, resp, http.StatusUnauthorized)
 }
 
@@ -347,7 +369,7 @@ func TestConcurrentConditionalWrites(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			req, _ := http.NewRequest(http.MethodPost, ts.URL+"/k", strings.NewReader("writer"))
-			withAuth(req)
+			withAdmin(req)
 			req.Header.Set("If-Match", etag)
 			<-start
 			resp, err := http.DefaultClient.Do(req)
@@ -382,13 +404,13 @@ func TestLegacyKeyWithoutUpdatedAt(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cubby.Close()
-	cubby.AddUser(testUser, testPassword, false)
+	cubby.AddAdmin(testAdmin, testPassword)
 	// legacy object: metadata predates UpdatedAt tracking
 	err = cubby.db.Update(func(tx *bolt.Tx) error {
 		if err := cubby.Put("legacy", []byte("old"), tx); err != nil {
 			return err
 		}
-		return cubby.PutMetadata("legacy", &CubbyMetadata{ContentType: "text/x-legacy", Readers: PublicGroup, Writers: UserGroup}, tx)
+		return cubby.PutMetadata("legacy", &CubbyMetadata{ContentType: "text/x-legacy", Public: true}, tx)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -405,7 +427,7 @@ func TestLegacyKeyWithoutUpdatedAt(t *testing.T) {
 		t.Errorf("body = %q", body)
 	}
 
-	resp, _ = do(t, ts, http.MethodPost, "legacy", "new", withAuth, withHeader("If-Match", `"0"`))
+	resp, _ = do(t, ts, http.MethodPost, "legacy", "new", withAdmin, withHeader("If-Match", `"0"`))
 	expectStatus(t, resp, http.StatusPreconditionFailed)
 	put(t, ts, "legacy", "new", withHeader("If-Match", "*"))
 }

@@ -3,7 +3,6 @@ package main
 import (
 	_ "embed"
 	htmltemplate "html/template"
-	"text/template"
 )
 
 //go:embed index.html
@@ -42,8 +41,8 @@ var diff2htmlJS string
 //go:embed static/diff2html.min.css
 var diff2htmlCSS string
 
-func IndexTemplate() *template.Template {
-	indexTemplate, err := template.New("index").Parse(indexFile)
+func IndexTemplate() *htmltemplate.Template {
+	indexTemplate, err := htmltemplate.New("index").Parse(indexFile)
 	if err != nil {
 		panic(err)
 	}

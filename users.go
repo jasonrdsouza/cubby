@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"strings"
+	"regexp"
+	"slices"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -11,60 +12,40 @@ const (
 	USERS_BUCKET        = "users"
 	BCRYPT_COST         = 8
 	CUBBY_READER_HEADER = "X-Cubby-Reader"
-	CUBBY_WRITER_HEADER = "X-Cubby-Writer"
 )
 
-type Group int
+// Credential names double as Basic Auth usernames and as entries in the
+// comma-separated X-Cubby-Reader header, so they are kept to a safe charset.
+var credentialNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
-// Do not rearrange these constants or else the enum values stored in the DB
-// will be corrupted.
-const (
-	UnknownGroup Group = iota
-	AdminGroup
-	UserGroup
-	PublicGroup
-)
-
-func StringToGroup(groupString string) Group {
-	switch strings.ToLower(groupString) {
-	case "admin":
-		return AdminGroup
-	case "user":
-		return UserGroup
-	case "public":
-		return PublicGroup
-	default:
-		return UnknownGroup
+// ValidateCredentialName reports whether name can be used for a new admin or
+// reader key. "public" and "private" are reserved X-Cubby-Reader values.
+func ValidateCredentialName(name string) error {
+	if !credentialNamePattern.MatchString(name) {
+		return fmt.Errorf("invalid name %q: use 1-64 letters, digits, '.', '_' or '-'", name)
 	}
-}
-
-func (g Group) String() string {
-	switch g {
-	case AdminGroup:
-		return "admin"
-	case UserGroup:
-		return "user"
-	case PublicGroup:
-		return "public"
-	default:
-		return "unknown"
+	if name == "public" || name == "private" {
+		return fmt.Errorf("invalid name %q: reserved", name)
 	}
+	return nil
 }
 
 type User interface {
 	Name() string
-	PasswordMatches(string) bool
-	InGroup(Group) bool
+	IsAdmin() bool
+	CanRead(*CubbyMetadata) bool
 	String() string
 }
 
+// RegularUser is a stored credential: either an admin, who can read and write
+// everything, or a reader key, which can only read the blobs that list it.
 type RegularUser struct {
 	Username     string
 	PasswordHash []byte
-	Groups       []Group
+	Admin        bool // the zero value (reader key) is the least privileged
 }
 
-func NewUser(name string, password string, groups []Group) RegularUser {
+func NewUser(name string, password string, admin bool) RegularUser {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), BCRYPT_COST)
 	if err != nil {
 		panic(err)
@@ -73,36 +54,36 @@ func NewUser(name string, password string, groups []Group) RegularUser {
 	return RegularUser{
 		Username:     name,
 		PasswordHash: passwordHash,
-		Groups:       groups,
+		Admin:        admin,
 	}
 }
 
-func (u RegularUser) Name() string { return u.Username }
+func (u RegularUser) Name() string  { return u.Username }
+func (u RegularUser) IsAdmin() bool { return u.Admin }
 
 func (u RegularUser) PasswordMatches(password string) bool {
 	err := bcrypt.CompareHashAndPassword(u.PasswordHash, []byte(password))
 	return err == nil
 }
 
-func (u RegularUser) InGroup(group Group) bool {
-	for _, userGroup := range u.Groups {
-		if userGroup == group {
-			return true
-		} else if userGroup == AdminGroup {
-			// Let Admins have access to everything
-			return true
-		}
+func (u RegularUser) CanRead(m *CubbyMetadata) bool {
+	return u.Admin || m.Public || slices.Contains(m.ReaderKeys, u.Username)
+}
+
+func (u RegularUser) Role() string {
+	if u.Admin {
+		return "admin"
 	}
-	return false
+	return "reader key"
 }
 
 func (u RegularUser) String() string {
-	return fmt.Sprintf("User{Username: %s, Groups: %v}", u.Username, u.Groups)
+	return fmt.Sprintf("User{Username: %s, Role: %s}", u.Username, u.Role())
 }
 
 type AnonymousUser struct{}
 
-func (u AnonymousUser) Name() string                         { return "Anonymous" }
-func (u AnonymousUser) PasswordMatches(password string) bool { return false }
-func (u AnonymousUser) InGroup(group Group) bool             { return group == PublicGroup }
-func (u AnonymousUser) String() string                       { return "AnonymousUser{}" }
+func (u AnonymousUser) Name() string                  { return "Anonymous" }
+func (u AnonymousUser) IsAdmin() bool                 { return false }
+func (u AnonymousUser) CanRead(m *CubbyMetadata) bool { return m.Public }
+func (u AnonymousUser) String() string                { return "AnonymousUser{}" }

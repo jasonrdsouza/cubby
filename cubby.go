@@ -24,15 +24,19 @@ func main() {
 	listUserCmd := flag.NewFlagSet("listusers", flag.ExitOnError)
 	listUserDbFile := listUserCmd.String("path", "cubby.db", "filepath where cubby data is stored")
 
-	addUserCmd := flag.NewFlagSet("adduser", flag.ExitOnError)
-	addUserDbFile := addUserCmd.String("path", "cubby.db", "filepath where cubby data is stored")
-	addUserName := addUserCmd.String("name", "", "username to add")
-	addUserPassword := addUserCmd.String("password", "", "password for this user")
-	addUserAdmin := addUserCmd.Bool("admin", false, "whether to make this user an admin or not")
+	addAdminCmd := flag.NewFlagSet("addadmin", flag.ExitOnError)
+	addAdminDbFile := addAdminCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	addAdminName := addAdminCmd.String("name", "", "admin username to add (or whose password to reset)")
+	addAdminPassword := addAdminCmd.String("password", "", "password for this admin")
+
+	addKeyCmd := flag.NewFlagSet("addkey", flag.ExitOnError)
+	addKeyDbFile := addKeyCmd.String("path", "cubby.db", "filepath where cubby data is stored")
+	addKeyName := addKeyCmd.String("name", "", "reader key name to add")
+	addKeyRegenerate := addKeyCmd.Bool("regenerate", false, "replace the secret of an existing reader key")
 
 	removeUserCmd := flag.NewFlagSet("removeuser", flag.ExitOnError)
 	removeUserDbFile := removeUserCmd.String("path", "cubby.db", "filepath where cubby data is stored")
-	removeUserName := removeUserCmd.String("name", "", "username to remove")
+	removeUserName := removeUserCmd.String("name", "", "admin or reader key to remove")
 
 	getCmd := flag.NewFlagSet("get", flag.ExitOnError)
 	getAddr := getCmd.String("addr", DEFAULT_ADDR, "cubby server address")
@@ -56,8 +60,11 @@ func main() {
 		fmt.Fprint(os.Stderr, " listusers:\n")
 		listUserCmd.PrintDefaults()
 
-		fmt.Fprint(os.Stderr, " adduser:\n")
-		addUserCmd.PrintDefaults()
+		fmt.Fprint(os.Stderr, " addadmin:\n")
+		addAdminCmd.PrintDefaults()
+
+		fmt.Fprint(os.Stderr, " addkey:\n")
+		addKeyCmd.PrintDefaults()
 
 		fmt.Fprint(os.Stderr, " removeuser:\n")
 		removeUserCmd.PrintDefaults()
@@ -73,7 +80,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Println("Please specify subcommand (serve, listusers, adduser, removeuser, get, put, remove)")
+		fmt.Println("Please specify subcommand (serve, listusers, addadmin, addkey, removeuser, get, put, remove)")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -91,16 +98,25 @@ func main() {
 		} else {
 			fmt.Println("Users:")
 			for _, user := range users {
-				fmt.Printf("- %s\n", user)
+				fmt.Printf("- %s (%s)\n", user.Name(), user.Role())
 			}
 		}
-	case "adduser":
-		addUserCmd.Parse(os.Args[2:])
-		cubbyServer := adminServer(*addUserDbFile)
-		err := cubbyServer.AddUser(*addUserName, *addUserPassword, *addUserAdmin)
+	case "addadmin":
+		addAdminCmd.Parse(os.Args[2:])
+		cubbyServer := adminServer(*addAdminDbFile)
+		err := cubbyServer.AddAdmin(*addAdminName, *addAdminPassword)
 		if err != nil {
 			log.Fatal(err)
 		}
+	case "addkey":
+		addKeyCmd.Parse(os.Args[2:])
+		cubbyServer := adminServer(*addKeyDbFile)
+		secret, err := cubbyServer.AddReaderKey(*addKeyName, *addKeyRegenerate)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("Reader key %s: %s\n", *addKeyName, secret)
+		fmt.Println("Use it as Basic Auth username:password. The secret is not shown again.")
 	case "removeuser":
 		removeUserCmd.Parse(os.Args[2:])
 		cubbyServer := adminServer(*removeUserDbFile)

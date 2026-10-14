@@ -6,7 +6,6 @@ import (
 	"fmt"
 	htmltemplate "html/template"
 	"log"
-	"text/template"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -24,7 +23,7 @@ type CubbyServer struct {
 	db             *bolt.DB
 	maxObjectSize  int64
 	log            *log.Logger
-	indexTemplate  *template.Template
+	indexTemplate  *htmltemplate.Template
 	viewerTemplate *htmltemplate.Template
 }
 
@@ -207,14 +206,17 @@ func (c *CubbyServer) Remove(key string, tx *bolt.Tx) error {
 	return err
 }
 
-func (c *CubbyServer) ListAtomic() []string {
-	var keys []string
+// ListReadable returns the keys whose blobs user can read.
+func (c *CubbyServer) ListReadable(user User) []string {
+	keys := []string{}
 	c.db.View(func(tx *bolt.Tx) error {
-		keys = c.List(tx)
+		for _, key := range c.List(tx) {
+			if user.CanRead(c.GetMetadata(key, tx)) {
+				keys = append(keys, key)
+			}
+		}
 		return nil
 	})
-
-	c.log.Printf("Successfully listed keys")
 	return keys
 }
 

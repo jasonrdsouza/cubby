@@ -77,7 +77,11 @@
         <div>
           <label for="access">Access:</label>
           <label><input type="radio" name="accessType" value="public" checked> Public</label>
-          <label><input type="radio" name="accessType" value="user"> Private</label>
+          <label><input type="radio" name="accessType" value="private"> Private</label>
+        </div>
+        <div id="readerKeysDiv" style="display: none;">
+          <label for="readerKeys">Reader keys:</label>
+          <input type="text" id="readerKeys" placeholder="comma-separated; blank for admins only">
         </div>
         <div>
           <label for="contentType">Content Type:</label>
@@ -130,7 +134,7 @@
         </div>
         <div id="credentialsDiv" style="display: none;">
           <div>
-            <label for="username">Username:</label>
+            <label for="username">Admin username:</label>
             <input type="text" id="username" autocomplete="username">
           </div>
           <div>
@@ -149,6 +153,8 @@
       const fileInputDiv = document.getElementById('fileInputDiv');
       const textInputDiv = document.getElementById('textInputDiv');
       const credentialsDiv = document.getElementById('credentialsDiv');
+      const readerKeysDiv = document.getElementById('readerKeysDiv');
+      const readerKeysInput = document.getElementById('readerKeys');
       const usernameInput = document.getElementById('username');
       const passwordInput = document.getElementById('password');
 
@@ -158,6 +164,12 @@
         const bytes = new TextEncoder().encode(`${username}:${password}`);
         return 'Basic ' + btoa(String.fromCharCode(...bytes));
       }
+
+      form.querySelectorAll('input[name="accessType"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          readerKeysDiv.style.display = e.target.value === 'private' ? 'block' : 'none';
+        })
+      });
 
       form.querySelectorAll('input[name="uploadType"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
@@ -206,7 +218,10 @@
         try {
           const headers = {
             'Content-Type': inferredContentType,
-            'X-Cubby-Reader': accessType,
+            // "public", "private" (admins only), or the reader keys allowed
+            'X-Cubby-Reader': accessType === 'private' && readerKeysInput.value.trim()
+              ? readerKeysInput.value.trim()
+              : accessType,
           };
           // Browsers don't reliably show their login prompt for a fetch() 401,
           // so credentials are collected in the form instead
@@ -225,14 +240,15 @@
           if (response.ok) {
             statusDiv.textContent = `Successfully uploaded to key: ${key}`;
             form.reset();
+            readerKeysDiv.style.display = 'none';
             // keep credentials for further uploads from this page
             usernameInput.value = username;
             passwordInput.value = password;
           } else if (response.status === 401) {
             credentialsDiv.style.display = 'block';
             statusDiv.textContent = username
-              ? 'Upload failed: invalid credentials, or this user may not write to this key.'
-              : 'Sign in required: enter your username and password, then press Upload again.';
+              ? 'Upload failed: invalid credentials. Only admins can upload.'
+              : 'Sign in required: enter an admin username and password, then press Upload again.';
             (username ? passwordInput : usernameInput).focus();
           } else {
             // statusText is empty over HTTP/2, so show the code and server message
