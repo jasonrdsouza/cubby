@@ -6,6 +6,7 @@ import (
 	"fmt"
 	htmltemplate "html/template"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -25,6 +26,8 @@ type CubbyServer struct {
 	log            *log.Logger
 	indexTemplate  *htmltemplate.Template
 	viewerTemplate *htmltemplate.Template
+	adminTemplate  *htmltemplate.Template
+	adminMux       *http.ServeMux
 }
 
 func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error) {
@@ -37,7 +40,9 @@ func NewCubbyServer(dbFilename string, maxObjectSizeMB int) (*CubbyServer, error
 		log:            log.Default(),
 		indexTemplate:  IndexTemplate(),
 		viewerTemplate: ViewerTemplate(),
+		adminTemplate:  AdminTemplate(),
 	}
+	server.adminMux = server.newAdminMux()
 
 	db, err := bolt.Open(server.filename, 0600, &bolt.Options{Timeout: 1 * time.Second})
 	if err != nil {

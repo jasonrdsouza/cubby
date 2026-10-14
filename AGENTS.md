@@ -109,6 +109,12 @@ The entire application is in a single Go package (main) with no subdirectories. 
 - Each key has associated metadata: ContentType, UpdatedAt, Public, ReaderKeys
 - Metadata is stored separately from data using gob encoding
 
+**Admin Page (`adminpage.go`, `admin.html`)**
+- Served under the reserved `/_admin` prefix (`isAdminPath`); every request there requires an admin (401 + Basic Auth challenge otherwise) and is routed by `adminMux`, a method-pattern `http.ServeMux`
+- Plain HTML forms, no JS beyond `confirm()`: create/regenerate/delete reader keys, change a blob's access (`SetAccess`, which leaves content and ETag untouched), delete blobs. Admins are CLI-only
+- Successful actions 303 back to `/_admin`; a generated secret is rendered directly (never in a URL) with `Cache-Control: no-store`
+- CSRF is covered by `HTTPHandler`'s `CrossOriginProtection`
+
 **Go Client (`client.go`)**
 - Simple HTTP client for programmatic access from Go
 - Reads credentials from `CUBBY_USERNAME` and `CUBBY_PASSWORD` environment variables
@@ -147,7 +153,7 @@ The entire application is in a single Go package (main) with no subdirectories. 
 
 3. **Web-Native**: The server serves content with proper Content-Type headers, making objects directly accessible in browsers. Special case: uploading `favicon.ico` makes it the site favicon.
 
-4. **Reserved Paths**: `/` (index page) and `/client.js` (JavaScript client) are special-cased in the handler and cannot be used as storage keys.
+4. **Reserved Paths**: `/` (index page), `/client.js` (JavaScript client), `/vendor/*` assets and `/_admin` (plus everything under `/_admin/`) are special-cased in the handler and cannot be used as storage keys.
 
 ## Important Notes
 

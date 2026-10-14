@@ -49,6 +49,11 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 	}
 	user := c.FetchUser(username, password)
 
+	if isAdminPath(r.URL.Path) {
+		c.serveAdmin(w, r, user)
+		return
+	}
+
 	if r.URL.Path == "" || r.URL.Path == "/" {
 		log.Println("Serving index page")
 		// index page shows a list of the occupied cubbies (ie. active keys)

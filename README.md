@@ -69,7 +69,9 @@ By default, Cubby stores all of its data in a single [BoltDB](https://github.com
 ./bin/cubby removeuser -path data/cubby.db -name family
 ```
 
-These commands require direct access to the underlying `cubby.db` file, and the server must be stopped while they run (BoltDB allows one process at a time).
+Reader keys can also be managed from the admin page at `/_admin` (admins only, via the browser's Basic Auth prompt), which lists every blob and lets you change who can read it, create, regenerate and delete reader keys, and delete blobs. Admins are managed only from the command line.
+
+The commands require direct access to the underlying `cubby.db` file, and the server must be stopped while they run (BoltDB allows one process at a time).
 
 #### Transport Security
 **Note that Cubby itself does not provide transport level security. It is up to the system administrator to ensure that Cubby is only accessible via a secure channel (ie. HTTPS).** The easiest way to accomplish this is to use a reverse proxy like [NGINX](https://www.nginx.com/) or [Caddy](https://caddyserver.com/).

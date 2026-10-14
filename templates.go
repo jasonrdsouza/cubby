@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	htmltemplate "html/template"
+	"slices"
 )
 
 //go:embed index.html
@@ -10,6 +11,9 @@ var indexFile string
 
 //go:embed js-client/cubby-client.js
 var clientJS string
+
+//go:embed admin.html
+var adminFile string
 
 //go:embed viewer.html
 var viewerFile string
@@ -55,4 +59,9 @@ func ViewerTemplate() *htmltemplate.Template {
 		panic(err)
 	}
 	return viewerTemplate
+}
+
+func AdminTemplate() *htmltemplate.Template {
+	funcs := htmltemplate.FuncMap{"contains": slices.Contains[[]string]}
+	return htmltemplate.Must(htmltemplate.New("admin").Funcs(funcs).Parse(adminFile))
 }
