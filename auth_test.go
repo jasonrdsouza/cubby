@@ -64,7 +64,7 @@ func TestReaderKeyCannotWrite(t *testing.T) {
 
 func TestReaderHeaderValidation(t *testing.T) {
 	ts := newTestServer(t)
-	for _, header := range []string{"nobody", testAdmin, "alice,nobody", "public,alice", "user", "bad name", "alice,"} {
+	for _, header := range []string{"nobody", testAdmin, "alice,nobody", "public,alice", "PUBLIC,alice", "user", "bad name", "alice,"} {
 		resp, _ := do(t, ts, http.MethodPost, "k", "v", withAdmin, withHeader(CUBBY_READER_HEADER, header))
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s %q: status %d, want 400", CUBBY_READER_HEADER, header, resp.StatusCode)
@@ -88,6 +88,14 @@ func TestAccessPersistsAcrossWrites(t *testing.T) {
 	}
 
 	put(t, ts, "k", "v3", withHeader(CUBBY_READER_HEADER, "public"))
+	resp, _ = do(t, ts, http.MethodGet, "k", "")
+	expectStatus(t, resp, http.StatusOK)
+
+	// public and private are case-insensitive
+	put(t, ts, "k", "v4", withHeader(CUBBY_READER_HEADER, "PRIVATE"))
+	resp, _ = do(t, ts, http.MethodGet, "k", "")
+	expectStatus(t, resp, http.StatusUnauthorized)
+	put(t, ts, "k", "v5", withHeader(CUBBY_READER_HEADER, " Public "))
 	resp, _ = do(t, ts, http.MethodGet, "k", "")
 	expectStatus(t, resp, http.StatusOK)
 }
@@ -128,6 +136,11 @@ func TestAddReaderKey(t *testing.T) {
 	}
 	if _, err := cubby.AddReaderKey(testAdmin); err == nil {
 		t.Error("adding a reader key with an admin's name succeeded")
+	}
+	for _, reserved := range []string{"public", "Private"} {
+		if _, err := cubby.AddReaderKey(reserved); err == nil {
+			t.Errorf("adding reader key %q succeeded", reserved)
+		}
 	}
 	if _, err := cubby.RegenerateReaderKey("nobody"); err == nil {
 		t.Error("regenerating a missing reader key succeeded")

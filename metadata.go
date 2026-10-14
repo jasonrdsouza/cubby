@@ -43,9 +43,10 @@ func (m *CubbyMetadata) SetAccess(public bool, readerKeys []string) {
 }
 
 // ParseAccess parses an X-Cubby-Reader header value: "public", "private"
-// (admins only), or a comma-separated list of reader key names.
+// (admins only), or a comma-separated list of reader key names. "public" and
+// "private" are matched case-insensitively; key names are case-sensitive.
 func ParseAccess(header string) (public bool, readerKeys []string, err error) {
-	switch v := strings.TrimSpace(header); v {
+	switch strings.ToLower(strings.TrimSpace(header)) {
 	case "public":
 		return true, nil, nil
 	case "private":

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -19,12 +20,13 @@ const (
 var credentialNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 // ValidateCredentialName reports whether name can be used for a new admin or
-// reader key. "public" and "private" are reserved X-Cubby-Reader values.
+// reader key. "public" and "private" are reserved X-Cubby-Reader values, in
+// any case, since the header matches them case-insensitively.
 func ValidateCredentialName(name string) error {
 	if !credentialNamePattern.MatchString(name) {
 		return fmt.Errorf("invalid name %q: use 1-64 letters, digits, '.', '_' or '-'", name)
 	}
-	if name == "public" || name == "private" {
+	if strings.EqualFold(name, "public") || strings.EqualFold(name, "private") {
 		return fmt.Errorf("invalid name %q: reserved", name)
 	}
 	return nil

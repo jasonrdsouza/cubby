@@ -196,16 +196,22 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// optional: without it, the blob keeps its access (or is public if new)
 		readerHeader := r.Header.Get(CUBBY_READER_HEADER)
-		public, readerKeys, err := ParseAccess(readerHeader)
-		if readerHeader != "" && err != nil {
-			http.Error(w, "Invalid "+CUBBY_READER_HEADER+": "+err.Error(), http.StatusBadRequest)
-			return
+		var public bool
+		var readerKeys []string
+		if readerHeader != "" {
+			var err error
+			public, readerKeys, err = ParseAccess(readerHeader)
+			if err != nil {
+				http.Error(w, "Invalid "+CUBBY_READER_HEADER+": "+err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 
 		var b bytes.Buffer
 		r.Body = http.MaxBytesReader(w, r.Body, c.maxObjectSize)
-		_, err = b.ReadFrom(r.Body)
+		_, err := b.ReadFrom(r.Body)
 		if err != nil {
 			log.Printf("Error reading uploaded data: %v", err)
 			http.Error(w, "Could not read data", http.StatusInternalServerError)

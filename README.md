@@ -103,6 +103,8 @@ Access is set with the `X-Cubby-Reader` header when writing:
 | `family,work` | admins, plus the `family` and `work` reader keys |
 | *(omitted)* | unchanged for an existing blob; public for a new one |
 
+`public` and `private` are case-insensitive; reader key names are case-sensitive.
+
 
 ### Running
 Run the server
