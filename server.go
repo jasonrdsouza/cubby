@@ -205,6 +205,20 @@ func (c *CubbyServer) RemoveAtomic(key string) error {
 	return err
 }
 
+// Exists reports whether key holds a blob (its data or its metadata).
+func (c *CubbyServer) Exists(key string, tx *bolt.Tx) bool {
+	return tx.Bucket([]byte(c.dataBucket)).Get([]byte(key)) != nil ||
+		tx.Bucket([]byte(c.metaBucket)).Get([]byte(key)) != nil
+}
+
+// Delete removes a blob: its data and its metadata.
+func (c *CubbyServer) Delete(key string, tx *bolt.Tx) error {
+	if err := c.Remove(key, tx); err != nil {
+		return err
+	}
+	return c.RemoveMetadata(key, tx)
+}
+
 func (c *CubbyServer) Remove(key string, tx *bolt.Tx) error {
 	b := tx.Bucket([]byte(c.dataBucket))
 	err := b.Delete([]byte(key))

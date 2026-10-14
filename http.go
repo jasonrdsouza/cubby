@@ -274,11 +274,7 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 				return nil
 			}
 
-			err := c.Remove(key, tx)
-			if err != nil {
-				return err
-			}
-			return c.RemoveMetadata(key, tx)
+			return c.Delete(key, tx)
 		})
 
 		if err != nil {
@@ -301,9 +297,8 @@ func (c *CubbyServer) Handler(w http.ResponseWriter, r *http.Request) {
 // transaction. On failure it writes a 412 response (carrying the current ETag,
 // if any) and returns false.
 func (c *CubbyServer) checkWritePreconditions(w http.ResponseWriter, r *http.Request, key string, metadata *CubbyMetadata, tx *bolt.Tx) bool {
-	exists := !metadata.Empty() || tx.Bucket([]byte(c.dataBucket)).Get([]byte(key)) != nil
 	etag := metadata.ETag()
-	if writePreconditionsPass(r, exists, etag) {
+	if writePreconditionsPass(r, c.Exists(key, tx), etag) {
 		return true
 	}
 

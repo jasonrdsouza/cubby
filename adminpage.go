@@ -100,13 +100,10 @@ func (c *CubbyServer) adminSetAccess(w http.ResponseWriter, r *http.Request) {
 func (c *CubbyServer) adminDeleteBlob(w http.ResponseWriter, r *http.Request) {
 	key := r.PostFormValue("key")
 	err := c.db.Update(func(tx *bolt.Tx) error {
-		if c.GetMetadata(key, tx).Empty() && tx.Bucket([]byte(c.dataBucket)).Get([]byte(key)) == nil {
+		if !c.Exists(key, tx) {
 			return fmt.Errorf("no blob named %s", key)
 		}
-		if err := c.Remove(key, tx); err != nil {
-			return err
-		}
-		return c.RemoveMetadata(key, tx)
+		return c.Delete(key, tx)
 	})
 	c.redirectOrError(w, r, err)
 }
