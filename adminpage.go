@@ -53,18 +53,20 @@ type adminNotice struct {
 }
 
 func (c *CubbyServer) adminAddKey(w http.ResponseWriter, r *http.Request) {
-	c.showNewSecret(w, r, false)
+	name := strings.TrimSpace(r.PostFormValue("name"))
+	secret, err := c.AddReaderKey(name)
+	c.renderNewSecret(w, name, secret, err)
 }
 
 func (c *CubbyServer) adminRegenerateKey(w http.ResponseWriter, r *http.Request) {
-	c.showNewSecret(w, r, true)
+	name := r.PostFormValue("name")
+	secret, err := c.RegenerateReaderKey(name)
+	c.renderNewSecret(w, name, secret, err)
 }
 
-// showNewSecret renders the page with the new secret directly, rather than
-// redirecting, so the secret never appears in a URL or the browser history.
-func (c *CubbyServer) showNewSecret(w http.ResponseWriter, r *http.Request, regenerate bool) {
-	name := strings.TrimSpace(r.PostFormValue("name"))
-	secret, err := c.AddReaderKey(name, regenerate)
+// renderNewSecret shows a just-generated secret on the page itself, rather
+// than redirecting, so it never appears in a URL or the browser history.
+func (c *CubbyServer) renderNewSecret(w http.ResponseWriter, name, secret string, err error) {
 	if err != nil {
 		c.renderAdminPage(w, http.StatusBadRequest, adminNotice{Error: err.Error()})
 		return

@@ -99,21 +99,14 @@ func (c *CubbyServer) AddAdmin(name string, password string) error {
 }
 
 // AddReaderKey creates a reader key with a generated secret, which it returns.
-// With regenerate, it instead replaces the secret of an existing reader key.
-func (c *CubbyServer) AddReaderKey(name string, regenerate bool) (string, error) {
+func (c *CubbyServer) AddReaderKey(name string) (string, error) {
 	if err := ValidateCredentialName(name); err != nil {
 		return "", err
 	}
 	secret := rand.Text()
 	err := c.db.Update(func(tx *bolt.Tx) error {
-		existing := c.getUser(name, tx)
-		switch {
-		case existing != nil && existing.Admin:
-			return fmt.Errorf("%s is an admin, not a reader key", name)
-		case existing != nil && !regenerate:
-			return fmt.Errorf("reader key %s already exists", name)
-		case existing == nil && regenerate:
-			return fmt.Errorf("reader key %s does not exist", name)
+		if c.getUser(name, tx) != nil {
+			return fmt.Errorf("%s already exists", name)
 		}
 		return c.putUser(NewUser(name, secret, false), tx)
 	})
@@ -123,6 +116,25 @@ func (c *CubbyServer) AddReaderKey(name string, regenerate bool) (string, error)
 		return "", err
 	}
 	c.log.Printf("Successfully added reader key: %s", name)
+	return secret, nil
+}
+
+// RegenerateReaderKey replaces a reader key's secret with a generated one,
+// which it returns. The old secret stops working; the key's blobs are kept.
+func (c *CubbyServer) RegenerateReaderKey(name string) (string, error) {
+	secret := rand.Text()
+	err := c.db.Update(func(tx *bolt.Tx) error {
+		if !c.isReaderKey(name, tx) {
+			return fmt.Errorf("no reader key named %s", name)
+		}
+		return c.putUser(NewUser(name, secret, false), tx)
+	})
+
+	if err != nil {
+		c.log.Printf("Error regenerating reader key %s: %v", name, err)
+		return "", err
+	}
+	c.log.Printf("Successfully regenerated reader key: %s", name)
 	return secret, nil
 }
 

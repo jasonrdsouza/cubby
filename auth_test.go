@@ -112,7 +112,7 @@ func TestRemovingReaderKeyRevokesItsBlobs(t *testing.T) {
 
 func TestAddReaderKey(t *testing.T) {
 	ts, cubby := newTestCubby(t)
-	secret, err := cubby.AddReaderKey("guest", false)
+	secret, err := cubby.AddReaderKey("guest")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,17 +120,23 @@ func TestAddReaderKey(t *testing.T) {
 	resp, _ := do(t, ts, http.MethodGet, "k", "", withBasicAuth("guest", secret))
 	expectStatus(t, resp, http.StatusOK)
 
-	if _, err := cubby.AddReaderKey("guest", false); err == nil {
+	if _, err := cubby.AddReaderKey("guest"); err == nil {
 		t.Error("adding an existing reader key succeeded")
 	}
-	if _, err := cubby.AddReaderKey(testAdmin, true); err == nil {
+	if _, err := cubby.RegenerateReaderKey(testAdmin); err == nil {
 		t.Error("regenerating an admin as a reader key succeeded")
+	}
+	if _, err := cubby.AddReaderKey(testAdmin); err == nil {
+		t.Error("adding a reader key with an admin's name succeeded")
+	}
+	if _, err := cubby.RegenerateReaderKey("nobody"); err == nil {
+		t.Error("regenerating a missing reader key succeeded")
 	}
 	if err := cubby.AddAdmin("guest", "pw"); err == nil {
 		t.Error("promoting a reader key to admin succeeded")
 	}
 
-	newSecret, err := cubby.AddReaderKey("guest", true)
+	newSecret, err := cubby.RegenerateReaderKey("guest")
 	if err != nil {
 		t.Fatal(err)
 	}

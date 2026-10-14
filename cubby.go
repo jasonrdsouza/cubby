@@ -113,7 +113,11 @@ func main() {
 	case "addkey":
 		addKeyCmd.Parse(os.Args[2:])
 		cubbyServer := adminServer(*addKeyDbFile)
-		secret, err := cubbyServer.AddReaderKey(*addKeyName, *addKeyRegenerate)
+		addOrRegenerate := cubbyServer.AddReaderKey
+		if *addKeyRegenerate {
+			addOrRegenerate = cubbyServer.RegenerateReaderKey
+		}
+		secret, err := addOrRegenerate(*addKeyName)
 		if err != nil {
 			log.Fatal(err)
 		}
