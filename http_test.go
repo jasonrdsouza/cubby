@@ -52,8 +52,12 @@ func newTestCubby(t *testing.T) (*httptest.Server, *CubbyServer) {
 // rather than the generated secret AddReaderKey would assign.
 func addTestReaderKey(t *testing.T, cubby *CubbyServer, name string) {
 	t.Helper()
-	err := cubby.db.Update(func(tx *bolt.Tx) error {
-		return cubby.putUser(NewUser(name, testPassword, false), tx)
+	user, err := NewUser(name, testPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cubby.db.Update(func(tx *bolt.Tx) error {
+		return cubby.putUser(user, tx)
 	})
 	if err != nil {
 		t.Fatalf("adding reader key: %v", err)

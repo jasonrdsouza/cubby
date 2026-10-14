@@ -176,6 +176,16 @@ func TestAddReaderKey(t *testing.T) {
 	expectStatus(t, resp, http.StatusOK)
 }
 
+func TestAdminPasswordLength(t *testing.T) {
+	_, cubby := newTestCubby(t)
+	if err := cubby.AddAdmin("long", strings.Repeat("x", 73)); err == nil || !strings.Contains(err.Error(), "72 bytes") {
+		t.Errorf("73-byte password: err = %v, want a 72-byte limit error", err)
+	}
+	if err := cubby.AddAdmin("long", strings.Repeat("x", 72)); err != nil {
+		t.Errorf("72-byte password: %v", err)
+	}
+}
+
 func TestIndexListsOnlyReadableKeys(t *testing.T) {
 	ts := newTestServer(t)
 	put(t, ts, "pub-blob", "v")
@@ -225,8 +235,12 @@ func TestPreMigrationRecordsFailClosed(t *testing.T) {
 		}
 		return buf.Bytes()
 	}
-	hash := NewUser("x", testPassword, false).PasswordHash
-	err := cubby.db.Update(func(tx *bolt.Tx) error {
+	user, err := NewUser("x", testPassword, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := user.PasswordHash
+	err = cubby.db.Update(func(tx *bolt.Tx) error {
 		tx.Bucket([]byte(cubby.dataBucket)).Put([]byte("was-public"), []byte("data"))
 		tx.Bucket([]byte(cubby.metaBucket)).Put([]byte("was-public"),
 			encode(oldMetadata{ContentType: "text/plain", UpdatedAt: time.Now(), Readers: oldPublic, Writers: oldUserGroup}))

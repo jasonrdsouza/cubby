@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -47,17 +48,19 @@ type RegularUser struct {
 	Admin        bool // the zero value (reader key) is the least privileged
 }
 
-func NewUser(name string, password string, admin bool) RegularUser {
+func NewUser(name string, password string, admin bool) (RegularUser, error) {
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), BCRYPT_COST)
-	if err != nil {
-		panic(err)
+	if errors.Is(err, bcrypt.ErrPasswordTooLong) {
+		return RegularUser{}, errors.New("password must be at most 72 bytes")
+	} else if err != nil {
+		return RegularUser{}, err
 	}
 
 	return RegularUser{
 		Username:     name,
 		PasswordHash: passwordHash,
 		Admin:        admin,
-	}
+	}, nil
 }
 
 func (u RegularUser) Name() string  { return u.Username }

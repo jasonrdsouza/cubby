@@ -83,11 +83,15 @@ func (c *CubbyServer) AddAdmin(name string, password string) error {
 	if password == "" {
 		return errors.New("admin password must not be empty")
 	}
-	err := c.db.Update(func(tx *bolt.Tx) error {
+	user, err := NewUser(name, password, true)
+	if err != nil {
+		return err
+	}
+	err = c.db.Update(func(tx *bolt.Tx) error {
 		if existing := c.getUser(name, tx); existing != nil && !existing.Admin {
 			return fmt.Errorf("%s is already a reader key", name)
 		}
-		return c.putUser(NewUser(name, password, true), tx)
+		return c.putUser(user, tx)
 	})
 
 	if err != nil {
@@ -104,11 +108,15 @@ func (c *CubbyServer) AddReaderKey(name string) (string, error) {
 		return "", err
 	}
 	secret := rand.Text()
-	err := c.db.Update(func(tx *bolt.Tx) error {
+	user, err := NewUser(name, secret, false)
+	if err != nil {
+		return "", err
+	}
+	err = c.db.Update(func(tx *bolt.Tx) error {
 		if c.getUser(name, tx) != nil {
 			return fmt.Errorf("%s already exists", name)
 		}
-		return c.putUser(NewUser(name, secret, false), tx)
+		return c.putUser(user, tx)
 	})
 
 	if err != nil {
@@ -123,11 +131,15 @@ func (c *CubbyServer) AddReaderKey(name string) (string, error) {
 // which it returns. The old secret stops working; the key's blobs are kept.
 func (c *CubbyServer) RegenerateReaderKey(name string) (string, error) {
 	secret := rand.Text()
-	err := c.db.Update(func(tx *bolt.Tx) error {
+	user, err := NewUser(name, secret, false)
+	if err != nil {
+		return "", err
+	}
+	err = c.db.Update(func(tx *bolt.Tx) error {
 		if !c.isReaderKey(name, tx) {
 			return fmt.Errorf("no reader key named %s", name)
 		}
-		return c.putUser(NewUser(name, secret, false), tx)
+		return c.putUser(user, tx)
 	})
 
 	if err != nil {
